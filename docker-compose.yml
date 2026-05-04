@@ -1,0 +1,46 @@
+version: '3.8'
+
+# IMPORTANT: Before deploying to production, set these environment variables:
+#   POSTGRES_PASSWORD - a strong random password (e.g. openssl rand -hex 32)
+#   ENCRYPTION_KEY    - a 32-byte hex key (e.g. openssl rand -hex 32)
+# The defaults below are for local development only.
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://skyrewall:${POSTGRES_PASSWORD:-skyrewall}@postgres:5432/skyrewall
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-changeme-use-openssl-rand-hex-32}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - skyrewall-net
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: skyrewall
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skyrewall}
+      POSTGRES_DB: skyrewall
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - skyrewall-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyrewall -d skyrewall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # NOT exposing port 5432 to keep DB only accessible within Docker network
+
+volumes:
+  postgres_data:
+
+networks:
+  skyrewall-net:
+    driver: bridge
