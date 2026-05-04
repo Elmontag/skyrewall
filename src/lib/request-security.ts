@@ -21,10 +21,19 @@ export function rejectCrossOrigin(req: NextRequest): NextResponse | null {
   const host = req.headers.get('host');
   if (!host) return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 });
 
-  const proto = req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(':', '');
-  const expected = `${proto}://${host}`;
+  // Compare only the host part of the Origin header (ignoring protocol).
+  // Behind reverse proxies (e.g. Nginx Proxy Manager) the internal protocol
+  // is always http:// while the browser Origin carries https://, so a full
+  // proto+host comparison would produce false-positive 403 errors.
+  // SameSite=Strict on the session cookie is the primary CSRF defence.
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 });
+  }
 
-  if (origin !== expected) {
+  if (originHost !== host) {
     return NextResponse.json({ error: 'Invalid request origin' }, { status: 403 });
   }
 
