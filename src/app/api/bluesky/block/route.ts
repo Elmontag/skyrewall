@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
+import { blockAccounts } from '@/lib/bluesky';
 import { query } from '@/lib/db';
 
 const MAX_DIDS = 5000;
 
-async function logBlockEvents(
-  userId: string | null,
-  dids: string[],
-  source: string
-) {
+async function logBlockEvents(userId: string | null, dids: string[], source: string) {
   if (!userId || dids.length === 0) return;
   try {
     const values = dids.map((_, i) => `($1, $${i + 2}, 'block', '${source}')`).join(', ');
@@ -51,34 +48,7 @@ export async function POST(req: NextRequest) {
     const agent = new BskyAgent({ service: 'https://bsky.social' });
     await agent.login({ identifier: handle, password });
 
-    const sessionDid = agent.session?.did;
-    if (!sessionDid) {
-      return NextResponse.json({ error: 'No active session' }, { status: 500 });
-    }
-
-    let succeeded = 0;
-    let failed = 0;
-    const succeededDids: string[] = [];
-    const batchSize = 10;
-
-    for (let i = 0; i < dids.length; i += batchSize) {
-      const batch = dids.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map((did: string) =>
-          agent.app.bsky.graph.block.create(
-            { repo: sessionDid },
-            { subject: did, createdAt: new Date().toISOString() }
-          )
-        )
-      );
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled') { succeeded++; succeededDids.push(batch[idx]); }
-        else failed++;
-      });
-      if (i + batchSize < dids.length) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    }
+    const { succeeded, failed, succeededDids } = await blockAccounts(agent, dids);
 
     // Log events asynchronously (fire-and-forget, non-fatal)
     const userId = await getSessionUserId();

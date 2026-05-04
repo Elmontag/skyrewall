@@ -87,9 +87,10 @@ export async function blockAccounts(
   dids: string[],
   batchSize = 10,
   onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
-): Promise<{ succeeded: number; failed: number }> {
+): Promise<{ succeeded: number; failed: number; succeededDids: string[] }> {
   let succeeded = 0;
   let failed = 0;
+  const succeededDids: string[] = [];
 
   for (let i = 0; i < dids.length; i += batchSize) {
     const batch = dids.slice(i, i + batchSize);
@@ -104,6 +105,7 @@ export async function blockAccounts(
             )
           );
           succeeded++;
+          succeededDids.push(did);
         } catch {
           failed++;
         }
@@ -115,7 +117,7 @@ export async function blockAccounts(
     }
   }
 
-  return { succeeded, failed };
+  return { succeeded, failed, succeededDids };
 }
 
 export async function muteAccounts(
@@ -123,9 +125,10 @@ export async function muteAccounts(
   dids: string[],
   batchSize = 10,
   onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
-): Promise<{ succeeded: number; failed: number }> {
+): Promise<{ succeeded: number; failed: number; succeededDids: string[] }> {
   let succeeded = 0;
   let failed = 0;
+  const succeededDids: string[] = [];
 
   for (let i = 0; i < dids.length; i += batchSize) {
     const batch = dids.slice(i, i + batchSize);
@@ -134,6 +137,7 @@ export async function muteAccounts(
         try {
           await withRetry(() => agent.mute(did));
           succeeded++;
+          succeededDids.push(did);
         } catch {
           failed++;
         }
@@ -145,7 +149,7 @@ export async function muteAccounts(
     }
   }
 
-  return { succeeded, failed };
+  return { succeeded, failed, succeededDids };
 }
 
 /**

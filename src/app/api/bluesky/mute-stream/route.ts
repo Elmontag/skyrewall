@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
+import { muteAccounts } from '@/lib/bluesky';
 import { query } from '@/lib/db';
 
 const MAX_DIDS = 5000;
@@ -40,26 +41,15 @@ export async function POST(req: NextRequest) {
         const agent = new BskyAgent({ service: 'https://bsky.social' });
         await agent.login({ identifier: handle as string, password: password as string });
 
-        let succeeded = 0;
-        let failed = 0;
-        const succeededDids: string[] = [];
         const total = didList.length;
-        const batchSize = 10;
-
-        for (let i = 0; i < total; i += batchSize) {
-          const batch = didList.slice(i, i + batchSize);
-          const results = await Promise.allSettled(
-            batch.map((did) => agent.mute(did))
-          );
-          results.forEach((r, idx) => {
-            if (r.status === 'fulfilled') { succeeded++; succeededDids.push(batch[idx]); }
-            else failed++;
-          });
-          controller.enqueue(encode({ done: Math.min(i + batchSize, total), total, succeeded, failed }));
-          if (i + batchSize < total) {
-            await new Promise((r) => setTimeout(r, 500));
+        const { succeeded, failed, succeededDids } = await muteAccounts(
+          agent,
+          didList,
+          10,
+          (done, tot, succ, fail) => {
+            controller.enqueue(encode({ done, total: tot, succeeded: succ, failed: fail }));
           }
-        }
+        );
 
         // Log events (fire-and-forget)
         const userId = await getSessionUserId();
