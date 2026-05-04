@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { decrypt, signSession } from '@/lib/encryption';
+import { decrypt, encrypt, signSession } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
 import { cookies, headers } from 'next/headers';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -69,11 +69,14 @@ export async function POST(req: NextRequest) {
     const agent = new BskyAgent({ service: 'https://bsky.social' });
     await agent.login({ identifier: handle, password });
 
-    // Also verify the stored (encrypted) password matches to ensure the user
-    // registered with the same credentials we have on file
+    // If the stored password differs (e.g. user rotated their BlueSky app-password),
+    // update it silently — BlueSky login above is the source of truth.
     const storedPassword = decrypt(user.encrypted_password);
     if (storedPassword !== password) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      await query(
+        'UPDATE users SET encrypted_password = $1 WHERE id = $2',
+        [encrypt(password), user.id]
+      );
     }
 
     const sessionData = signSession(JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) }));
