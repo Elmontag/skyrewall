@@ -1,9 +1,9 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { encrypt, decrypt, verifySession } from '@/lib/encryption';
+import { encrypt, decrypt } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
-import { cookies } from 'next/headers';
+import { getSessionUserId } from '@/lib/session';
 
 interface UserRow {
   id: string;
@@ -12,13 +12,9 @@ interface UserRow {
 }
 
 async function getUser(): Promise<UserRow | null> {
-  const cookieStore = await cookies();
-  const session = cookieStore.get('session');
-  if (!session) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
   try {
-    const payload = verifySession(session.value);
-    if (!payload) return null;
-    const { userId } = JSON.parse(payload);
     const rows = await query<UserRow>(
       'SELECT id, handle, encrypted_password FROM users WHERE id = $1',
       [userId]
@@ -57,9 +53,17 @@ export async function PATCH(req: NextRequest) {
 
     if (body.handle) {
       const newHandle: string = body.handle.trim();
-      // Verify new handle with current stored password
+      // Verify new handle with current stored password — acts as ownership proof
       await agent.login({ identifier: newHandle, password: currentPassword });
-      await query('UPDATE users SET handle = $1 WHERE id = $2', [newHandle, user.id]);
+      try {
+        await query('UPDATE users SET handle = $1 WHERE id = $2', [newHandle, user.id]);
+      } catch (dbErr: unknown) {
+        const msg = dbErr instanceof Error ? dbErr.message : '';
+        if (msg.includes('unique') || msg.includes('duplicate')) {
+          return NextResponse.json({ error: 'This handle is already registered.' }, { status: 409 });
+        }
+        throw dbErr;
+      }
       return NextResponse.json({ success: true, updated: 'handle' });
     }
 

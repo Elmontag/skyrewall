@@ -137,11 +137,11 @@ export default function Home() {
           </div>
           {/* Legal links */}
           <div className="flex gap-3 px-1">
-            <a href="/impressum.template.md" target="_blank" rel="noopener noreferrer"
+            <a href="/impressum"
               className="text-xs transition-colors hover:underline" style={{ color: 'var(--text-secondary)' }}>
               {t.impressum}
             </a>
-            <a href="/datenschutz.template.md" target="_blank" rel="noopener noreferrer"
+            <a href="/datenschutz"
               className="text-xs transition-colors hover:underline" style={{ color: 'var(--text-secondary)' }}>
               {t.privacyPolicy}
             </a>

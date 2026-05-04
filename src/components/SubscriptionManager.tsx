@@ -188,7 +188,7 @@ export default function SubscriptionManager({ t }: Props) {
           </div>
           <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
             {t.privacyPolicyAccept}{' '}
-            <a href="/datenschutz.template.md" target="_blank" rel="noopener noreferrer"
+            <a href="/datenschutz"
               style={{ color: 'var(--accent)', textDecoration: 'underline' }} onClick={(e) => e.stopPropagation()}>
               {t.privacyPolicyLink}
             </a>

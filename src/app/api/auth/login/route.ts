@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { decrypt, signSession, verifySession } from '@/lib/encryption';
+import { decrypt, signSession } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { parseSession } from '@/lib/session';
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
+const AUTH_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
 
 interface UserRow {
   id: string;
@@ -18,11 +21,10 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+  const parsed = parseSession(session.value);
+  if (!parsed) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
   try {
-    const payload = verifySession(session.value);
-    if (!payload) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
-    const { userId } = JSON.parse(payload);
-    const rows = await query<UserRow>('SELECT id, handle FROM users WHERE id = $1', [userId]);
+    const rows = await query<UserRow>('SELECT id, handle FROM users WHERE id = $1', [parsed.userId]);
     if (rows.length === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 });
     return NextResponse.json({ user: { id: rows[0].id, handle: rows[0].handle } });
   } catch {
@@ -31,6 +33,17 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limiting by IP
+  const headerStore = await headers();
+  const ip = headerStore.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown';
+  const rl = checkRateLimit(`login:${ip}`, AUTH_RATE_LIMIT.limit, AUTH_RATE_LIMIT.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+    );
+  }
+
   try {
     const { handle, password } = await req.json();
     if (!handle || !password) {
@@ -59,7 +72,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    const sessionData = signSession(JSON.stringify({ userId: user.id }));
+    const sessionData = signSession(JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) }));
     const response = NextResponse.json({ success: true, user: { id: user.id, handle: user.handle } });
     response.cookies.set('session', sessionData, {
       httpOnly: true,
