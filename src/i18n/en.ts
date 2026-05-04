@@ -195,6 +195,11 @@ const en = {
   statsLoginRequiredDesc: 'You must be logged in to the Subscriptions feature to view statistics.',
   statsNoData: 'No data yet.',
 
+  // Rate limit warnings
+  rateLimitWarning: 'Large operation: BlueSky may temporarily rate-limit this. The operation will pause automatically and retry.',
+  rateLimitEstimate: 'Estimated time: ~{time}s',
+  streamingProgress: '{done} / {total} processed',
+
   // Errors
   errorInvalidCreds: 'Invalid credentials. Please check your handle and app password.',
   errorNetwork: 'Network error. Please try again.',

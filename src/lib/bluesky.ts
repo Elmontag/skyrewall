@@ -3,6 +3,37 @@ import type { Follower } from '@/types';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
+/**
+ * Retries an async operation on HTTP 429/503 with exponential backoff.
+ * Respects Retry-After header (capped at 60s). Up to maxAttempts total tries.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const status = (err as any)?.status ?? (err as any)?.response?.status;
+      if (status !== 429 && status !== 503) throw err;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const retryAfterRaw = (err as any)?.headers?.get?.('retry-after');
+      let waitMs: number;
+      if (retryAfterRaw) {
+        const secs = parseInt(retryAfterRaw as string, 10);
+        waitMs = Math.min(isNaN(secs) ? 1000 : secs * 1000, 60_000);
+      } else {
+        waitMs = Math.min(1000 * Math.pow(2, attempt), 60_000);
+      }
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 export async function createAgent(handle: string, password: string): Promise<BskyAgent> {
   const agent = new BskyAgent({ service: 'https://bsky.social' });
   await agent.login({ identifier: handle, password });
@@ -53,7 +84,8 @@ export async function fetchAllFollowers(
 export async function blockAccounts(
   agent: BskyAgent,
   dids: string[],
-  batchSize = 10
+  batchSize = 10,
+  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
 ): Promise<{ succeeded: number; failed: number }> {
   let succeeded = 0;
   let failed = 0;
@@ -64,9 +96,11 @@ export async function blockAccounts(
       batch.map(async (did) => {
         try {
           if (!agent.session) throw new Error('No active session');
-          await agent.app.bsky.graph.block.create(
-            { repo: agent.session.did },
-            { subject: did, createdAt: new Date().toISOString() }
+          await withRetry(() =>
+            agent.app.bsky.graph.block.create(
+              { repo: agent.session!.did },
+              { subject: did, createdAt: new Date().toISOString() }
+            )
           );
           succeeded++;
         } catch {
@@ -74,7 +108,7 @@ export async function blockAccounts(
         }
       })
     );
-    // Rate limit pause between batches
+    if (onProgress) onProgress(Math.min(i + batchSize, dids.length), dids.length, succeeded, failed);
     if (i + batchSize < dids.length) {
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -86,7 +120,8 @@ export async function blockAccounts(
 export async function muteAccounts(
   agent: BskyAgent,
   dids: string[],
-  batchSize = 10
+  batchSize = 10,
+  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
 ): Promise<{ succeeded: number; failed: number }> {
   let succeeded = 0;
   let failed = 0;
@@ -96,13 +131,14 @@ export async function muteAccounts(
     await Promise.allSettled(
       batch.map(async (did) => {
         try {
-          await agent.mute(did);
+          await withRetry(() => agent.mute(did));
           succeeded++;
         } catch {
           failed++;
         }
       })
     );
+    if (onProgress) onProgress(Math.min(i + batchSize, dids.length), dids.length, succeeded, failed);
     if (i + batchSize < dids.length) {
       await new Promise((r) => setTimeout(r, 500));
     }

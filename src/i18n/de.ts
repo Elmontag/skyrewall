@@ -197,6 +197,11 @@ const de: Translations = {
   statsLoginRequiredDesc: 'Du musst beim Abonnement-Feature angemeldet sein, um Statistiken anzusehen.',
   statsNoData: 'Noch keine Daten.',
 
+  // Rate limit warnings
+  rateLimitWarning: 'Große Operation: BlueSky kann vorübergehend ein Rate-Limit setzen. Die Operation pausiert automatisch und wiederholt den Versuch.',
+  rateLimitEstimate: 'Geschätzte Zeit: ~{time}s',
+  streamingProgress: '{done} / {total} verarbeitet',
+
   // Errors
   errorInvalidCreds: 'Ungültige Anmeldedaten. Bitte überprüfe Handle und App-Passwort.',
   errorNetwork: 'Netzwerkfehler. Bitte versuche es erneut.',

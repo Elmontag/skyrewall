@@ -32,6 +32,24 @@ async function logSyncEvents(
   }
 }
 
+/** Returns DIDs already actioned by this user (DB-only, 0 API calls). */
+async function getAlreadyActionedDids(
+  userId: string,
+  dids: string[],
+  action: 'block' | 'mute'
+): Promise<Set<string>> {
+  if (dids.length === 0) return new Set();
+  try {
+    const rows = await query<{ target_did: string }>(
+      `SELECT target_did FROM block_events WHERE user_id = $1 AND action = $2 AND target_did = ANY($3)`,
+      [userId, action, dids]
+    );
+    return new Set(rows.map((r) => r.target_did));
+  } catch {
+    return new Set();
+  }
+}
+
 async function syncAllSubscriptions(): Promise<void> {
   const rows = await query<SyncRow>(`
     SELECT s.id AS sub_id, s.user_id, s.target_handle, s.mode, s.sub_type, s.include_followers, s.config,
@@ -75,18 +93,26 @@ async function syncAllSubscriptions(): Promise<void> {
           row.sub_type === 'reblock' ? 'reblock' :
           row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
 
-        if (action === 'block') {
-          await blockAccounts(agent, dids);
-        } else {
-          await muteAccounts(agent, dids);
+        // Filter out DIDs already actioned in a previous sync (0 extra API calls)
+        const alreadyActioned = await getAlreadyActionedDids(row.user_id, dids, action);
+        const newDids = dids.filter((d) => !alreadyActioned.has(d));
+
+        if (newDids.length > 0) {
+          if (action === 'block') {
+            await blockAccounts(agent, newDids);
+          } else {
+            await muteAccounts(agent, newDids);
+          }
+          await logSyncEvents(row.user_id, newDids, action, source);
         }
 
-        await logSyncEvents(row.user_id, dids, action, source);
+        const skipped = alreadyActioned.size;
+        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped)`);
+      } else {
+        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, 0 accounts)`);
       }
 
       await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
-
-      console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${dids.length} accounts)`);
     } catch (err) {
       console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, err instanceof Error ? err.message : err);
     }

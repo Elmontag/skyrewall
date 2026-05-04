@@ -327,6 +327,17 @@ export default function ReblockTool({ t }: Props) {
                     {selected.size > 0 && <span className="ml-1.5 opacity-80">({selected.size})</span>}
                   </button>
                 </div>
+                {selected.size > 500 && (
+                  <div className="flex items-start gap-2 px-4 py-3 rounded-xl text-xs"
+                    style={{ backgroundColor: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.35)', color: '#ca8a04' }}>
+                    <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      {t.rateLimitWarning}
+                      {' '}
+                      {t.rateLimitEstimate.replace('{time}', String(Math.ceil(selected.size / 10 * 0.6)))}
+                    </span>
+                  </div>
+                )}
               </>
           }
         </div>

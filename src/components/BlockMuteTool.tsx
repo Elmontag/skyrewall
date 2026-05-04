@@ -36,10 +36,10 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [protectMutuals, setProtectMutuals] = useState(true);
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
+  const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+
   const [inlineSubSaved, setInlineSubSaved] = useState(false);
   const [inlineSubSaving, setInlineSubSaving] = useState(false);
-
-  // Detect active subscription session — use server-stored credentials instead of asking user
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
       .then(async (r) => {
@@ -188,10 +188,12 @@ export default function BlockMuteTool({ mode, t }: Props) {
 
   const handleConfirm = async () => {
     setStep('processing');
+    setStreamProgress(null);
     const dids: string[] = [...selected];
 
     const credFields = prefilled ? {} : { handle, password };
 
+    // Resolve target DID and prepend if not already included
     try {
       const resolveRes = await fetch('/api/bluesky/followers', {
         method: 'POST',
@@ -204,6 +206,51 @@ export default function BlockMuteTool({ mode, t }: Props) {
       }
     } catch { /* proceed */ }
 
+    // Use SSE streaming for large batches to avoid Next.js 60s timeout
+    if (dids.length > 200) {
+      const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
+      try {
+        const res = await fetch(streamEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...credFields, dids }),
+        });
+        if (!res.body) throw new Error('No stream body');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.error) throw new Error(event.error);
+                setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                if (event.complete) {
+                  setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                  setStep('done');
+                  return;
+                }
+              } catch (parseErr) {
+                if (parseErr instanceof Error && parseErr.message !== 'JSON') throw parseErr;
+              }
+            }
+          }
+        }
+        setStep('done');
+      } catch {
+        setResult({ succeeded: 0, failed: dids.length });
+        setStep('done');
+      }
+      return;
+    }
+
+    // Standard blocking POST for smaller batches
     const endpoint = mode === 'block' ? '/api/bluesky/block' : '/api/bluesky/mute';
     try {
       const res = await fetch(endpoint, {
@@ -225,6 +272,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setMutualDids(new Set()); setProtectMutuals(true);
     setActionedDids({ blocked: new Set(), muted: new Set() }); setHideActioned(false);
     setInlineSubSaved(false);
+    setStreamProgress(null);
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     // If session credentials were prefilled, go back to target; otherwise back to credentials
@@ -472,6 +520,17 @@ export default function BlockMuteTool({ mode, t }: Props) {
                   {selected.size > 0 && <span className="ml-1.5 opacity-80">({selected.size + 1})</span>}
                 </button>
               </div>
+              {selected.size > 500 && (
+                <div className="flex items-start gap-2 px-4 py-3 rounded-xl text-xs"
+                  style={{ backgroundColor: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.35)', color: '#ca8a04' }}>
+                  <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+                  <span>
+                    {t.rateLimitWarning}
+                    {' '}
+                    {t.rateLimitEstimate.replace('{time}', String(Math.ceil(selected.size / 10 * 0.6)))}
+                  </span>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -487,9 +546,30 @@ export default function BlockMuteTool({ mode, t }: Props) {
               : <ShieldX size={26} strokeWidth={1.5} className="pulse" />}
           </div>
           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t.processing}</p>
-          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
-            <div className="h-full progress-bar" style={{ width: '100%' }} />
-          </div>
+          {streamProgress ? (
+            <>
+              <div className="w-full flex flex-col gap-1.5">
+                <div className="flex justify-between text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span>{t.streamingProgress.replace('{done}', String(streamProgress.done)).replace('{total}', String(streamProgress.total))}</span>
+                  <span>{Math.round((streamProgress.done / streamProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${(streamProgress.done / streamProgress.total) * 100}%`, backgroundColor: 'var(--accent)' }}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--success)' }}>✓ {streamProgress.succeeded}</span>
+                {streamProgress.failed > 0 && <span style={{ color: 'var(--danger)' }}>✗ {streamProgress.failed}</span>}
+              </div>
+            </>
+          ) : (
+            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+              <div className="h-full progress-bar" style={{ width: '100%' }} />
+            </div>
+          )}
         </div>
       )}
 
