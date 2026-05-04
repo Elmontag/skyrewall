@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/session';
 import { isValidDid } from '@/lib/session';
 import { query } from '@/lib/db';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -15,8 +16,19 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'whitelist:post',
+    identity: userId,
+    limit: 60,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   let body: { target_did?: string; note?: string };
   try {
@@ -28,6 +40,9 @@ export async function POST(req: NextRequest) {
   const { target_did, note } = body;
   if (!target_did || !isValidDid(target_did)) {
     return NextResponse.json({ error: 'Invalid DID' }, { status: 400 });
+  }
+  if (typeof note === 'string' && note.length > 500) {
+    return NextResponse.json({ error: 'Note too long' }, { status: 400 });
   }
 
   await query(

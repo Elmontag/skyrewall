@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getSessionUserId } from '@/lib/session';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 async function getUserId(): Promise<string | null> {
   return getSessionUserId();
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'subscriptions:delete',
+    identity: userId,
+    limit: 60,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   const { id } = await params;
 

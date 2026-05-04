@@ -37,6 +37,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+  const [processError, setProcessError] = useState('');
   const [targetDid, setTargetDid] = useState('');
 
   const [inlineSubSaved, setInlineSubSaved] = useState(false);
@@ -80,7 +81,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     }
 
     // When prefilled (session active), omit credentials — backend reads from session cookie
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
 
     try {
       const res = await fetch('/api/bluesky/followers', {
@@ -222,12 +223,13 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const handleConfirm = async () => {
     setStep('processing');
     setStreamProgress(null);
+    setProcessError('');
     const dids: string[] = [...selected];
 
     // Prepend target DID (cached from initial fetch) if not already included
     if (targetDid && !dids.includes(targetDid)) dids.unshift(targetDid);
 
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
 
     // Always use SSE streaming — shows real progress even for small batches
     const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
@@ -254,6 +256,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
               if (event.error) throw new Error(event.error);
               setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
               if (event.complete) {
+                if (event.warning) setProcessError(event.warning);
                 setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
                 setStep('done');
                 return;
@@ -265,7 +268,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
         }
       }
       setStep('done');
-    } catch {
+    } catch (err) {
+      setProcessError(err instanceof Error ? err.message : t.errorNetwork);
       setResult({ succeeded: 0, failed: dids.length });
       setStep('done');
     }
@@ -278,6 +282,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setActionedDids({ blocked: new Set(), muted: new Set() }); setHideActioned(false);
     setInlineSubSaved(false);
     setStreamProgress(null);
+    setProcessError('');
     setTargetDid('');
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
@@ -606,6 +611,11 @@ export default function BlockMuteTool({ mode, t }: Props) {
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>{t.failed}</span>
                 <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
+              </div>
+            )}
+            {processError && (
+              <div className="text-xs pt-2" style={{ color: 'var(--danger)' }}>
+                {processError}
               </div>
             )}
           </div>

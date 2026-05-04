@@ -4,6 +4,7 @@ import { query } from '@/lib/db';
 import { encrypt, decrypt } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
 import { getSessionUserId } from '@/lib/session';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 interface UserRow {
   id: string;
@@ -31,9 +32,20 @@ export async function GET() {
   return NextResponse.json({ handle: user.handle });
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const user = await getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'account:delete',
+    identity: user.id,
+    limit: 3,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   await query('DELETE FROM users WHERE id = $1', [user.id]);
 
@@ -43,8 +55,19 @@ export async function DELETE() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const user = await getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'account:patch',
+    identity: user.id,
+    limit: 6,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   try {
     const body = await req.json();
@@ -82,7 +105,7 @@ export async function PATCH(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'BlueSky credentials could not be verified.' }, { status: 401 });
     }
-    console.error('[account PATCH] error:', err);
+    console.error('[account PATCH] error:', sanitizeError(err));
     return NextResponse.json({ error: 'Update failed' }, { status: 500 });
   }
 }

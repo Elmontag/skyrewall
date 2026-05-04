@@ -52,6 +52,7 @@ const en = {
   saveChanges: 'Save',
   saving: 'Saving…',
   changesSaved: 'Saved successfully.',
+  loggedOut: 'Logged out successfully.',
 
   // Follower search
   searchFollowers: 'Search followers…',
@@ -152,6 +153,7 @@ const en = {
   postBlockTool: 'Post Block',
   postBlockDesc: 'Block or mute users who interacted with a specific post.',
   postUrlLabel: 'Post URL or AT-URI',
+  postUrlPlaceholder: 'https://bsky.app/profile/user.bsky.social/post/...',
   postInteractionTypes: 'Interaction types',
   postTypeLikes: '❤ Likes',
   postTypeReposts: '🔁 Reposts',
@@ -161,6 +163,7 @@ const en = {
   postInteractorListTitle: 'Post interactors',
   postNoInteractors: 'No interactors found.',
   postInteractionSelectType: 'Select at least one interaction type.',
+  errorPostUrlRequired: 'Post URL or AT-URI is required.',
   postSubTypes: 'Monitor interaction types:',
 
   // Inline subscription card (shared across tools)

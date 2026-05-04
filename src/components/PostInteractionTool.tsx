@@ -33,6 +33,7 @@ export default function PostInteractionTool({ t }: Props) {
   const [savingPostSub, setSavingPostSub] = useState(false);
   const [postSubSaved, setPostSubSaved] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+  const [processError, setProcessError] = useState('');
 
   const [fetchCount, setFetchCount] = useState(0);
 
@@ -52,14 +53,14 @@ export default function PostInteractionTool({ t }: Props) {
   }, []);
 
   const handleLoad = async () => {
-    if (!postUrl.trim()) { setError(t.errorTargetRequired); return; }
+    if (!postUrl.trim()) { setError(t.errorPostUrlRequired); return; }
     if (types.size === 0) { setError(t.postInteractionSelectType); return; }
     if (!prefilled && (!handle.trim() || !password.trim())) { setError(t.errorHandleRequired); return; }
     setError('');
     setFetchCount(0);
     setStep('loading');
 
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
 
     try {
       const res = await fetch('/api/bluesky/post-interactions', {
@@ -129,8 +130,9 @@ export default function PostInteractionTool({ t }: Props) {
   const handleConfirm = async () => {
     setStep('processing');
     setStreamProgress(null);
+    setProcessError('');
     const dids = [...selected];
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
     const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
     try {
       const res = await fetch(streamEndpoint, {
@@ -155,6 +157,7 @@ export default function PostInteractionTool({ t }: Props) {
               if (event.error) throw new Error(event.error);
               setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
               if (event.complete) {
+                if (event.warning) setProcessError(event.warning);
                 setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
                 setStep('done');
                 return;
@@ -166,7 +169,8 @@ export default function PostInteractionTool({ t }: Props) {
         }
       }
       setStep('done');
-    } catch {
+    } catch (err) {
+      setProcessError(err instanceof Error ? err.message : t.errorNetwork);
       setResult({ succeeded: 0, failed: dids.length });
       setStep('done');
     }
@@ -193,6 +197,7 @@ export default function PostInteractionTool({ t }: Props) {
     setResult(null); setError('');
     setPostUrl('');
     setStreamProgress(null);
+    setProcessError('');
     setActionedDids({ blocked: new Set(), muted: new Set() });
     setPostSubSaved(false);
     setStep(prefilled ? 'ready' : 'credentials');
@@ -269,7 +274,7 @@ export default function PostInteractionTool({ t }: Props) {
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.postUrlLabel}</label>
             <input type="text" value={postUrl} onChange={(e) => setPostUrl(e.target.value)}
-              placeholder="https://bsky.app/profile/user.bsky.social/post/..."
+              placeholder={t.postUrlPlaceholder}
               className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring" style={input}
               onKeyDown={(e) => e.key === 'Enter' && handleLoad()} />
           </div>
@@ -370,7 +375,7 @@ export default function PostInteractionTool({ t }: Props) {
                   hideActioned={hideActioned}
                   onHideActionedChange={setHideActioned} />
                 <div className="flex gap-3 pt-1">
-                  <button onClick={reset}
+                  <button onClick={() => setStep('ready')}
                     className="px-4 py-2.5 rounded-xl text-sm"
                     style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
                     {t.back}
@@ -458,6 +463,11 @@ export default function PostInteractionTool({ t }: Props) {
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>{t.failed}</span>
                 <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
+              </div>
+            )}
+            {processError && (
+              <div className="text-xs pt-2" style={{ color: 'var(--danger)' }}>
+                {processError}
               </div>
             )}
           </div>

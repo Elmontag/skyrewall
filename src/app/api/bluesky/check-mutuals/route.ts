@@ -1,16 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials, isValidDid } from '@/lib/session';
+import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
 import { checkMutuals } from '@/lib/bluesky';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_DIDS = 5000;
 
 export async function POST(req: NextRequest) {
   try {
+    const originRejection = rejectCrossOrigin(req);
+    if (originRejection) return originRejection;
+
     const sessionCreds = await getSessionCredentials();
     if (!sessionCreds) {
       return NextResponse.json({ error: 'Login required for mutual protection' }, { status: 401 });
     }
+
+    const userId = await getSessionUserId();
+    const limited = checkApiRateLimit(req, {
+      scope: 'bluesky:check-mutuals',
+      identity: userId ?? sessionCreds.handle,
+      limit: 30,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (limited) return limited;
 
     const body = await req.json();
     const { dids } = body;
@@ -36,7 +49,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
-    console.error('[check-mutuals]', err);
+    console.error('[check-mutuals]', sanitizeError(err));
     return NextResponse.json({ error: 'Failed to check mutuals' }, { status: 500 });
   }
 }

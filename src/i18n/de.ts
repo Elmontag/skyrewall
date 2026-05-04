@@ -54,6 +54,7 @@ const de: Translations = {
   saveChanges: 'Speichern',
   saving: 'Speichert…',
   changesSaved: 'Erfolgreich gespeichert.',
+  loggedOut: 'Erfolgreich abgemeldet.',
 
   // Follower search
   searchFollowers: 'Follower suchen…',
@@ -154,6 +155,7 @@ const de: Translations = {
   postBlockTool: 'Post-Block',
   postBlockDesc: 'Nutzer blockieren oder stummschalten, die mit einem bestimmten Post interagiert haben.',
   postUrlLabel: 'Post-URL oder AT-URI',
+  postUrlPlaceholder: 'https://bsky.app/profile/user.bsky.social/post/...',
   postInteractionTypes: 'Interaktionstypen',
   postTypeLikes: '❤ Likes',
   postTypeReposts: '🔁 Reposts',
@@ -163,6 +165,7 @@ const de: Translations = {
   postInteractorListTitle: 'Post-Interagierende',
   postNoInteractors: 'Keine Interagierenden gefunden.',
   postInteractionSelectType: 'Mindestens einen Interaktionstyp auswählen.',
+  errorPostUrlRequired: 'Post-URL oder AT-URI ist erforderlich.',
   postSubTypes: 'Interaktionstypen überwachen:',
 
   // Inline subscription card (shared across tools)

@@ -2,12 +2,16 @@ import { NextRequest } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
 import { blockAccounts } from '@/lib/bluesky';
-import { query } from '@/lib/db';
+import { logBlockEvents } from '@/lib/block-events';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 const MAX_DIDS = 5000;
 
 export async function POST(req: NextRequest) {
-  let body: { dids?: unknown; source?: string; handle?: string; password?: string };
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
+  let body: { dids?: unknown; source?: string; handle?: string; password?: string; stateless?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -21,15 +25,26 @@ export async function POST(req: NextRequest) {
   }
 
   const sessionCreds = await getSessionCredentials();
-  const handle = sessionCreds?.handle ?? body.handle;
-  const password = sessionCreds?.password ?? body.password;
+  const isStateless = body.stateless === true;
+  const handle = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
+  const password = sessionCreds?.password ?? (isStateless ? body.password : undefined);
+  const userId = await getSessionUserId();
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'bluesky:block-stream',
+    identity: userId ?? handle,
+    limit: 20,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   if (!handle || !password) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  const validSources = ['manual', 'reblock', 'interaction'];
-  const resolvedSource = validSources.includes(source as string) ? (source as string) : 'manual';
+  const validSources = ['manual', 'reblock', 'interaction'] as const;
+  type Source = typeof validSources[number];
+  const resolvedSource: Source = validSources.includes(source as Source) ? (source as Source) : 'manual';
   const didList = dids as string[];
 
   const stream = new ReadableStream({
@@ -51,17 +66,16 @@ export async function POST(req: NextRequest) {
           }
         );
 
-        // Log events (fire-and-forget)
-        const userId = await getSessionUserId();
+        let warning: string | undefined;
         if (userId && succeededDids.length > 0) {
-          const values = succeededDids.map((_, i) => `($1, $${i + 2}, 'block', '${resolvedSource}')`).join(', ');
-          query(
-            `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
-            [userId, ...succeededDids]
-          ).catch(() => {});
+          try {
+            await logBlockEvents(userId, succeededDids, 'block', resolvedSource);
+          } catch {
+            warning = 'Action completed, but local event logging failed.';
+          }
         }
 
-        controller.enqueue(encode({ done: total, total, succeeded, failed, complete: true }));
+        controller.enqueue(encode({ done: total, total, succeeded, failed, warning, complete: true }));
       } catch (err) {
         controller.enqueue(encode({ error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {

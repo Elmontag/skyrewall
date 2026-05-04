@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials } from '@/lib/session';
+import { getSessionCredentials, getSessionUserId } from '@/lib/session';
 import { fetchAllFollowers } from '@/lib/bluesky';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 export async function POST(req: NextRequest) {
   try {
+    const originRejection = rejectCrossOrigin(req);
+    if (originRejection) return originRejection;
+
     const body = await req.json();
     const { targetHandle, resolveOnly } = body;
 
     // Prefer session credentials; fall back to explicit body credentials for stateless use
     const sessionCreds = await getSessionCredentials();
-    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
-    const password: string | undefined = sessionCreds?.password ?? body.password;
+    const isStateless = body.stateless === true;
+    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
+    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
+    const userId = await getSessionUserId();
+
+    const limited = checkApiRateLimit(req, {
+      scope: 'bluesky:followers',
+      identity: userId ?? handle,
+      limit: 30,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (limited) return limited;
 
     if (!handle || !password || !targetHandle) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });

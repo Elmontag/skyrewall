@@ -72,7 +72,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       })
       .catch(() => setAuthStep('login'))
       .finally(() => setLoading(false));
-  }, [handleField.state]);
+  }, []);
 
   const handleLogin = async () => {
     if (!loginHandle.trim() || !loginPassword.trim()) {
@@ -369,6 +369,11 @@ function UpdateCard({ icon, title, desc, inputType, placeholder, field, t, input
           {field.state === 'saved' ? t.saveChanges : t.saveChanges}
         </button>
       </div>
+      {field.state === 'saved' && (
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--success)' }}>
+          <Check size={12} /> {t.changesSaved}
+        </div>
+      )}
     </div>
   );
 }

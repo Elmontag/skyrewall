@@ -1,17 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials } from '@/lib/session';
+import { getSessionCredentials, getSessionUserId } from '@/lib/session';
 import { fetchBlockedByFromClearSky, enrichProfileBatch } from '@/lib/bluesky';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_RESULTS = 5000;
 
 export async function POST(req: NextRequest) {
   try {
+    const originRejection = rejectCrossOrigin(req);
+    if (originRejection) return originRejection;
+
     const body = await req.json().catch(() => ({}));
 
     const sessionCreds = await getSessionCredentials();
-    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
-    const password: string | undefined = sessionCreds?.password ?? body.password;
+    const isStateless = body.stateless === true;
+    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
+    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
+    const userId = await getSessionUserId();
+
+    const limited = checkApiRateLimit(req, {
+      scope: 'bluesky:check-blockedby',
+      identity: userId ?? handle,
+      limit: 30,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (limited) return limited;
 
     if (!handle) {
       return NextResponse.json({ error: 'Handle is required' }, { status: 400 });
@@ -65,7 +79,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
-    console.error('[check-blockedby]', err);
+    console.error('[check-blockedby]', sanitizeError(err));
     return NextResponse.json({ error: 'Failed to fetch blocker list' }, { status: 500 });
   }
 }

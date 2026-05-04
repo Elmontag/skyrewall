@@ -2,25 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
 import { muteAccounts } from '@/lib/bluesky';
-import { query } from '@/lib/db';
+import { logBlockEvents } from '@/lib/block-events';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 const MAX_DIDS = 5000;
 
-async function logMuteEvents(userId: string | null, dids: string[], source: string) {
-  if (!userId || dids.length === 0) return;
-  try {
-    const values = dids.map((_, i) => `($1, $${i + 2}, 'mute', '${source}')`).join(', ');
-    await query(
-      `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
-      [userId, ...dids]
-    );
-  } catch {
-    // Non-fatal
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
+    const originRejection = rejectCrossOrigin(req);
+    if (originRejection) return originRejection;
+
     const body = await req.json();
     const { dids, source = 'manual' } = body;
 
@@ -34,12 +25,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'One or more DIDs are invalid' }, { status: 400 });
     }
 
-    const validSources = ['manual', 'reblock', 'interaction'];
-    const resolvedSource = validSources.includes(source) ? source : 'manual';
+    const validSources = ['manual', 'reblock', 'interaction'] as const;
+    type Source = typeof validSources[number];
+    const resolvedSource: Source = validSources.includes(source as Source) ? (source as Source) : 'manual';
 
     const sessionCreds = await getSessionCredentials();
-    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
-    const password: string | undefined = sessionCreds?.password ?? body.password;
+    const isStateless = body.stateless === true;
+    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
+    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
+    const userId = await getSessionUserId();
+
+    const limited = checkApiRateLimit(req, {
+      scope: 'bluesky:mute',
+      identity: userId ?? handle,
+      limit: 20,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (limited) return limited;
 
     if (!handle || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -50,10 +52,14 @@ export async function POST(req: NextRequest) {
 
     const { succeeded, failed, succeededDids } = await muteAccounts(agent, dids);
 
-    const userId = await getSessionUserId();
-    logMuteEvents(userId, succeededDids, resolvedSource).catch(() => {});
+    let warning: string | undefined;
+    try {
+      await logBlockEvents(userId, succeededDids, 'mute', resolvedSource);
+    } catch {
+      warning = 'Action completed, but local event logging failed.';
+    }
 
-    return NextResponse.json({ succeeded, failed });
+    return NextResponse.json({ succeeded, failed, warning });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (message.includes('Authentication') || message.includes('Invalid')) {

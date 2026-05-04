@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getSessionUserId } from '@/lib/session';
+import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
 interface SubscriptionRow {
   id: string;
@@ -26,8 +27,19 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limited = checkApiRateLimit(req, {
+    scope: 'subscriptions:post',
+    identity: userId,
+    limit: 30,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (limited) return limited;
 
   try {
     const { target_handle, mode, include_followers, sub_type = 'follower', config = {} } = await req.json();
@@ -39,6 +51,12 @@ export async function POST(req: NextRequest) {
     }
     if (!['follower', 'reblock', 'postinteraction'].includes(sub_type)) {
       return NextResponse.json({ error: 'Invalid sub_type' }, { status: 400 });
+    }
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      return NextResponse.json({ error: 'Invalid config' }, { status: 400 });
+    }
+    if (JSON.stringify(config).length > 1000) {
+      return NextResponse.json({ error: 'Config too large' }, { status: 400 });
     }
 
     const rows = await query<SubscriptionRow>(

@@ -1,6 +1,8 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
 import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
+import { logBlockEvents } from '@/lib/block-events';
+import { sanitizeError } from '@/lib/request-security';
 
 interface SyncRow {
   sub_id: string;
@@ -12,24 +14,6 @@ interface SyncRow {
   config: Record<string, unknown>;
   handle: string;
   encrypted_password: string;
-}
-
-async function logSyncEvents(
-  userId: string,
-  dids: string[],
-  action: 'block' | 'mute',
-  source: 'subscription' | 'reblock' | 'interaction'
-) {
-  if (dids.length === 0) return;
-  try {
-    const values = dids.map((_, i) => `('${userId}', $${i + 1}, '${action}', '${source}')`).join(', ');
-    await query(
-      `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
-      dids
-    );
-  } catch {
-    // Non-fatal
-  }
 }
 
 /** Returns DIDs already actioned by this user (DB-only, 0 API calls). */
@@ -145,7 +129,7 @@ async function syncAllSubscriptions(): Promise<void> {
           } else {
             await muteAccounts(agent, newDids);
           }
-          await logSyncEvents(row.user_id, newDids, action, source);
+          await logBlockEvents(row.user_id, newDids, action, source);
         }
 
         const skipped = alreadyActioned.size;
@@ -157,7 +141,7 @@ async function syncAllSubscriptions(): Promise<void> {
 
       await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
     } catch (err) {
-      console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, err instanceof Error ? err.message : err);
+      console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, sanitizeError(err));
     }
 
     // Small inter-subscription pause to avoid burst rate-limit when a user has many subscriptions
@@ -172,10 +156,10 @@ export function startSyncWorker(): void {
   console.log(`[sync] Worker started — interval: ${intervalMinutes} min`);
 
   setTimeout(() => {
-    syncAllSubscriptions().catch((err) => console.error('[sync] Initial run failed:', err));
+    syncAllSubscriptions().catch((err) => console.error('[sync] Initial run failed:', sanitizeError(err)));
   }, 10_000);
 
   setInterval(() => {
-    syncAllSubscriptions().catch((err) => console.error('[sync] Scheduled run failed:', err));
+    syncAllSubscriptions().catch((err) => console.error('[sync] Scheduled run failed:', sanitizeError(err)));
   }, intervalMs);
 }

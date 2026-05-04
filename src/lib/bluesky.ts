@@ -1,6 +1,8 @@
 import { BskyAgent } from '@atproto/api';
 import type { Follower } from '@/types';
 import { query } from '@/lib/db';
+import { logBlockEvents } from '@/lib/block-events';
+import { isValidDid } from '@/lib/session';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
@@ -19,7 +21,12 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
       const status = (err as any)?.status ?? (err as any)?.response?.status;
       if (status !== 429 && status !== 503) throw err;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const retryAfterRaw = (err as any)?.headers?.get?.('retry-after');
+      const retryAfterRaw =
+        (err as any)?.response?.headers?.get?.('retry-after') ??
+        (err as any)?.response?.headers?.get?.('Retry-After') ??
+        (err as any)?.headers?.get?.('retry-after') ??
+        (err as any)?.headers?.get?.('Retry-After') ??
+        (err as any)?.headers?.['retry-after'];
       let waitMs: number;
       if (retryAfterRaw) {
         const secs = parseInt(retryAfterRaw as string, 10);
@@ -169,13 +176,9 @@ export async function importExistingActions(
     let cursor: string | undefined;
     do {
       const res = await agent.app.bsky.graph.getBlocks({ limit: 100, cursor });
-      const dids = res.data.blocks.map((b) => b.did);
+      const dids = res.data.blocks.map((b) => b.did).filter(isValidDid);
       if (dids.length > 0) {
-        const values = dids.map((_, i) => `('${userId}', $${i + 1}, 'block', 'imported')`).join(', ');
-        await query(
-          `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
-          dids
-        );
+        await logBlockEvents(userId, dids, 'block', 'imported');
         blocksImported += dids.length;
       }
       cursor = res.data.cursor;
@@ -190,13 +193,9 @@ export async function importExistingActions(
     let cursor: string | undefined;
     do {
       const res = await agent.app.bsky.graph.getMutes({ limit: 100, cursor });
-      const dids = res.data.mutes.map((m) => m.did);
+      const dids = res.data.mutes.map((m) => m.did).filter(isValidDid);
       if (dids.length > 0) {
-        const values = dids.map((_, i) => `('${userId}', $${i + 1}, 'mute', 'imported')`).join(', ');
-        await query(
-          `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
-          dids
-        );
+        await logBlockEvents(userId, dids, 'mute', 'imported');
         mutesImported += dids.length;
       }
       cursor = res.data.cursor;
@@ -241,7 +240,7 @@ export async function fetchBlockedByFromClearSky(
 
     for (const item of batch) {
       if (dids.length >= maxResults) break;
-      if (typeof item.did === 'string') dids.push(item.did);
+      if (typeof item.did === 'string' && isValidDid(item.did)) dids.push(item.did);
     }
 
     if (onProgress) onProgress(dids.length);
@@ -351,53 +350,43 @@ export async function fetchPostInteractors(
     }
   };
 
-  const fetchers: Promise<void>[] = [];
-
   if (types.includes('likes')) {
-    fetchers.push((async () => {
-      let cursor: string | undefined;
-      do {
-        if (seen.size >= maxResults) break;
-        const res = await agent.getLikes({ uri: atUri, limit: 100, cursor });
-        for (const l of res.data.likes) addActor(l.actor);
-        cursor = res.data.cursor;
-        if (cursor) await new Promise((r) => setTimeout(r, 200));
-      } while (cursor && seen.size < maxResults);
-    })());
+    let cursor: string | undefined;
+    do {
+      if (seen.size >= maxResults) break;
+      const res = await agent.getLikes({ uri: atUri, limit: 100, cursor });
+      for (const l of res.data.likes) addActor(l.actor);
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 250));
+    } while (cursor && seen.size < maxResults);
   }
 
   if (types.includes('reposts')) {
-    fetchers.push((async () => {
-      let cursor: string | undefined;
-      do {
-        if (seen.size >= maxResults) break;
-        const res = await agent.getRepostedBy({ uri: atUri, limit: 100, cursor });
-        for (const a of res.data.repostedBy) addActor(a);
-        cursor = res.data.cursor;
-        if (cursor) await new Promise((r) => setTimeout(r, 200));
-      } while (cursor && seen.size < maxResults);
-    })());
+    let cursor: string | undefined;
+    do {
+      if (seen.size >= maxResults) break;
+      const res = await agent.getRepostedBy({ uri: atUri, limit: 100, cursor });
+      for (const a of res.data.repostedBy) addActor(a);
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 250));
+    } while (cursor && seen.size < maxResults);
   }
 
   if (types.includes('quotes')) {
-    fetchers.push((async () => {
-      let cursor: string | undefined;
-      do {
-        if (seen.size >= maxResults) break;
-        const res = await agent.api.app.bsky.feed.getQuotes({ uri: atUri, limit: 100, cursor });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const resAny = res.data as any;
-        const feed: Array<{ post?: { author?: { did: string; handle: string; displayName?: string; avatar?: string } } }> = resAny.feed ?? [];
-        for (const post of feed) {
-          if (post.post?.author) addActor(post.post.author);
-        }
-        cursor = resAny.cursor as string | undefined;
-        if (cursor) await new Promise((r) => setTimeout(r, 200));
-      } while (cursor && seen.size < maxResults);
-    })());
+    let cursor: string | undefined;
+    do {
+      if (seen.size >= maxResults) break;
+      const res = await agent.api.app.bsky.feed.getQuotes({ uri: atUri, limit: 100, cursor });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resAny = res.data as any;
+      const feed: Array<{ post?: { author?: { did: string; handle: string; displayName?: string; avatar?: string } } }> = resAny.feed ?? [];
+      for (const post of feed) {
+        if (post.post?.author) addActor(post.post.author);
+      }
+      cursor = resAny.cursor as string | undefined;
+      if (cursor) await new Promise((r) => setTimeout(r, 250));
+    } while (cursor && seen.size < maxResults);
   }
-
-  await Promise.allSettled(fetchers);
 
   return Array.from(seen.values()).slice(0, maxResults);
 }

@@ -26,6 +26,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [notice, setNotice] = useState('');
   const t = lang === 'en' ? en : de;
 
   // Check auth state on mount
@@ -38,6 +39,8 @@ export default function Home() {
   const handleSidebarLogout = async () => {
     await fetch('/api/auth/login', { method: 'DELETE' });
     setLoggedIn(false);
+    setNotice(t.loggedOut);
+    setTimeout(() => setNotice(''), 2500);
     if (['account', 'subscriptions', 'stats'].includes(tab)) setTab('home');
   };
 
@@ -257,6 +260,12 @@ export default function Home() {
         {/* Content */}
         <main className="flex-1 px-6 py-7 w-full mx-auto"
           style={{ maxWidth: ['home', 'block', 'mute', 'reblock', 'postblock'].includes(tab) ? '1200px' : '672px' }}>
+          {notice && (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm"
+              style={{ backgroundColor: 'var(--success-muted)', color: 'var(--success)' }}>
+              {notice}
+            </div>
+          )}
           {tab === 'home' && <HomePage t={t} onNavigate={(dest) => setTab(dest)} />}
           {(tab === 'block' || tab === 'mute') && (
             <BlockMuteTool key={tab} mode={tab as Mode} t={t} />

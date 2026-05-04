@@ -5,8 +5,9 @@ import { BskyAgent } from '@atproto/api';
 import { cookies, headers } from 'next/headers';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { parseSession } from '@/lib/session';
+import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
+import { rejectCrossOrigin } from '@/lib/request-security';
 
-const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
 const AUTH_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
 
 interface UserRow {
@@ -33,6 +34,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   // Rate limiting by IP
   const headerStore = await headers();
   const ip = headerStore.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown';
@@ -75,10 +79,8 @@ export async function POST(req: NextRequest) {
     const sessionData = signSession(JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) }));
     const response = NextResponse.json({ success: true, user: { id: user.id, handle: user.handle } });
     response.cookies.set('session', sessionData, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: SESSION_MAX_AGE,
+      ...sessionCookieOptions,
+      maxAge: SESSION_MAX_AGE_SECONDS,
     });
     return response;
   } catch (err: unknown) {
@@ -90,8 +92,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
+  const originRejection = rejectCrossOrigin(req);
+  if (originRejection) return originRejection;
+
   const response = NextResponse.json({ success: true });
-  response.cookies.delete('session');
+  response.cookies.set('session', '', { ...sessionCookieOptions, maxAge: 0 });
   return response;
 }

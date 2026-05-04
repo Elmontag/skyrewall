@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials } from '@/lib/session';
+import { getSessionCredentials, getSessionUserId } from '@/lib/session';
 import { fetchPostInteractors } from '@/lib/bluesky';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_RESULTS = 5000;
 
@@ -27,6 +28,9 @@ async function resolvePostUri(agent: BskyAgent, input: string): Promise<string> 
 
 export async function POST(req: NextRequest) {
   try {
+    const originRejection = rejectCrossOrigin(req);
+    if (originRejection) return originRejection;
+
     const body = await req.json();
     const { postUrl, types } = body;
 
@@ -44,8 +48,18 @@ export async function POST(req: NextRequest) {
     }
 
     const sessionCreds = await getSessionCredentials();
-    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
-    const password: string | undefined = sessionCreds?.password ?? body.password;
+    const isStateless = body.stateless === true;
+    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
+    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
+    const userId = await getSessionUserId();
+
+    const limited = checkApiRateLimit(req, {
+      scope: 'bluesky:post-interactions',
+      identity: userId ?? handle,
+      limit: 20,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (limited) return limited;
 
     if (!handle || !password) {
       return NextResponse.json({ error: 'Credentials required' }, { status: 401 });
@@ -90,7 +104,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Invalid post URL')) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error('[post-interactions]', err);
+    console.error('[post-interactions]', sanitizeError(err));
     return NextResponse.json({ error: 'Failed to fetch post interactions' }, { status: 500 });
   }
 }

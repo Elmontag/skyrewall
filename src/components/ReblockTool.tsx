@@ -30,6 +30,7 @@ export default function ReblockTool({ t }: Props) {
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(true);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+  const [processError, setProcessError] = useState('');
 
   const [fetchCount, setFetchCount] = useState(0);
 
@@ -56,7 +57,7 @@ export default function ReblockTool({ t }: Props) {
     setFetchCount(0);
     setStep('loading');
 
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
 
     try {
       const res = await fetch('/api/bluesky/check-blockedby', {
@@ -126,8 +127,9 @@ export default function ReblockTool({ t }: Props) {
   const handleConfirm = async () => {
     setStep('processing');
     setStreamProgress(null);
+    setProcessError('');
     const dids = [...selected];
-    const credFields = prefilled ? {} : { handle, password };
+    const credFields = prefilled ? {} : { handle, password, stateless: true };
     const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
 
     try {
@@ -153,6 +155,7 @@ export default function ReblockTool({ t }: Props) {
               if (event.error) throw new Error(event.error);
               setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
               if (event.complete) {
+                if (event.warning) setProcessError(event.warning);
                 setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
                 setStep('done');
                 return;
@@ -164,7 +167,8 @@ export default function ReblockTool({ t }: Props) {
         }
       }
       setStep('done');
-    } catch {
+    } catch (err) {
+      setProcessError(err instanceof Error ? err.message : t.errorNetwork);
       setResult({ succeeded: 0, failed: dids.length });
       setStep('done');
     }
@@ -200,6 +204,7 @@ export default function ReblockTool({ t }: Props) {
     setResult(null); setError('');
     setSubscriptionSaved(false);
     setStreamProgress(null);
+    setProcessError('');
     setActionedDids({ blocked: new Set(), muted: new Set() });
     setStep(prefilled ? 'ready' : 'credentials');
   };
@@ -369,7 +374,7 @@ export default function ReblockTool({ t }: Props) {
                   hideActioned={hideActioned}
                   onHideActionedChange={setHideActioned} />
                 <div className="flex gap-3 pt-1 flex-wrap">
-                  <button onClick={reset}
+                  <button onClick={() => setStep('ready')}
                     className="px-4 py-2.5 rounded-xl text-sm transition-colors"
                     style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
                     {t.back}
@@ -470,6 +475,11 @@ export default function ReblockTool({ t }: Props) {
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>{t.failed}</span>
                 <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
+              </div>
+            )}
+            {processError && (
+              <div className="text-xs pt-2" style={{ color: 'var(--danger)' }}>
+                {processError}
               </div>
             )}
           </div>
