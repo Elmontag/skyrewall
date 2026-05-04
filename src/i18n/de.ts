@@ -31,6 +31,14 @@ const de: Translations = {
   homeFeature2Desc: 'Follower still stummschalten. Das Zielkonto erfährt nichts davon.',
   homeFeature3Title: 'Abonnements',
   homeFeature3Desc: 'Automatische Block-/Stummschalt-Regeln im Hintergrund.',
+  homeFeature4Title: 'Reblock',
+  homeFeature4Desc: 'Finde Accounts, die dich geblockt haben, und block sie zurück — einmalig oder automatisch.',
+  homeFeature5Title: 'Post-Block',
+  homeFeature5Desc: 'Blockiere oder schalte stumm, wer mit einem bestimmten Post interagiert hat (Likes, Reposts, Zitate).',
+  homeFeature6Title: 'Statistiken',
+  homeFeature6Desc: 'Visualisiere deine Moderationsaktivität: Blocks, Mutes, Quellen und Trends im Zeitverlauf.',
+  reblockClearSkyNote: 'Blocker-Daten werden über die ClearSky-API (clearsky.app) abgerufen — es werden keine Zugangsdaten an diesen Dienst übermittelt.',
+  kofiSupport: 'Projekt unterstützen',
   homeGetStarted: 'Block-Tool öffnen',
 
   // Account management

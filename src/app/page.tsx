@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, LogIn, LogOut, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, LogIn, LogOut, Coffee, type LucideIcon } from 'lucide-react';
 import type { Language, Mode } from '@/types';
 import en from '@/i18n/en';
 import de from '@/i18n/de';
@@ -187,6 +187,17 @@ export default function Home() {
 
         {/* Bottom controls */}
         <div className="px-3 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--bg-border)' }}>
+          {/* Ko-fi */}
+          <a
+            href="https://ko-fi.com/elmontag"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium transition-colors"
+            style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
+            title={t.kofiSupport}
+          >
+            <Coffee size={13} /> {t.kofiSupport}
+          </a>
           {/* Theme + Lang row */}
           <div className="flex gap-2">
             <ThemeBtn t={t} />

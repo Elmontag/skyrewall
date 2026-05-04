@@ -29,6 +29,14 @@ const en = {
   homeFeature2Desc: 'Silently mute followers. The target account won\'t know.',
   homeFeature3Title: 'Subscriptions',
   homeFeature3Desc: 'Set recurring block/mute rules. Runs automatically in the background.',
+  homeFeature4Title: 'Reblock',
+  homeFeature4Desc: 'Find accounts that blocked you and block them back — once or on a schedule.',
+  homeFeature5Title: 'Post Block',
+  homeFeature5Desc: 'Block or mute everyone who interacted with a specific post (likes, reposts, quotes).',
+  homeFeature6Title: 'Statistics',
+  homeFeature6Desc: 'Visualize your moderation activity: blocks, mutes, sources, and trends over time.',
+  reblockClearSkyNote: 'Blocker data is fetched via the ClearSky API (clearsky.app) — no credentials are shared with that service.',
+  kofiSupport: 'Support this project',
   homeGetStarted: 'Open Block Tool',
 
   // Account management

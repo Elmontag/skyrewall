@@ -176,6 +176,11 @@ export default function ReblockTool({ t }: Props) {
                 placeholder={t.appPasswordPlaceholder} className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all" style={input} />
             </div>
           </div>
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+            style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
+            <Info size={12} className="flex-shrink-0 mt-0.5" />
+            <span>{t.reblockClearSkyNote} <a href="https://clearsky.app" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent)' }}>clearsky.app</a></span>
+          </div>
           <button onClick={handleScan}
             className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
             style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
@@ -194,7 +199,12 @@ export default function ReblockTool({ t }: Props) {
           </div>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.reblockDesc}</p>
 
-          {/* Reblock mode tabs */}
+          {/* ClearSky API notice */}
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+            style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
+            <Info size={12} className="flex-shrink-0 mt-0.5" />
+            <span>{t.reblockClearSkyNote} <a href="https://clearsky.app" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent)' }}>clearsky.app</a></span>
+          </div>
           <div className="flex gap-2">
             {(['scan', 'subscribe'] as const).map((m) => (
               <button key={m} onClick={() => setReblockMode(m)}

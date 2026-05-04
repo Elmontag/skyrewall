@@ -1,17 +1,20 @@
 'use client';
-import { ShieldX, VolumeX, Bell, ShieldCheck, KeyRound, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, ShieldCheck, KeyRound, RefreshCcw, MessageSquareX, BarChart2, Coffee, type LucideIcon } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
   t: Translations;
-  onNavigate: (tab: 'block' | 'mute' | 'subscriptions') => void;
+  onNavigate: (tab: 'block' | 'mute' | 'subscriptions' | 'reblock' | 'postblock' | 'stats') => void;
 }
 
 export default function HomePage({ t, onNavigate }: Props) {
   const features = [
-    { Icon: ShieldX, title: t.homeFeature1Title, desc: t.homeFeature1Desc, tab: 'block' as const, color: 'var(--accent)' },
-    { Icon: VolumeX, title: t.homeFeature2Title, desc: t.homeFeature2Desc, tab: 'mute' as const, color: '#a78bfa' },
-    { Icon: Bell,    title: t.homeFeature3Title, desc: t.homeFeature3Desc, tab: 'subscriptions' as const, color: 'var(--success)' },
+    { Icon: ShieldX,        title: t.homeFeature1Title, desc: t.homeFeature1Desc, tab: 'block'         as const, color: 'var(--accent)'   },
+    { Icon: VolumeX,        title: t.homeFeature2Title, desc: t.homeFeature2Desc, tab: 'mute'          as const, color: '#a78bfa'          },
+    { Icon: Bell,           title: t.homeFeature3Title, desc: t.homeFeature3Desc, tab: 'subscriptions' as const, color: 'var(--success)'   },
+    { Icon: RefreshCcw,     title: t.homeFeature4Title, desc: t.homeFeature4Desc, tab: 'reblock'       as const, color: '#f97316'          },
+    { Icon: MessageSquareX, title: t.homeFeature5Title, desc: t.homeFeature5Desc, tab: 'postblock'     as const, color: '#ec4899'          },
+    { Icon: BarChart2,      title: t.homeFeature6Title, desc: t.homeFeature6Desc, tab: 'stats'         as const, color: '#14b8a6'          },
   ];
 
   return (
@@ -25,7 +28,7 @@ export default function HomePage({ t, onNavigate }: Props) {
         <p className="text-sm leading-relaxed max-w-xl" style={{ color: 'var(--text-secondary)' }}>
           {t.homeSubtitle}
         </p>
-        <div className="mt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           <button
             onClick={() => onNavigate('block')}
             className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all inline-flex items-center gap-2"
@@ -33,11 +36,21 @@ export default function HomePage({ t, onNavigate }: Props) {
           >
             <ShieldX size={15} /> {t.homeGetStarted}
           </button>
+          {/* Ko-fi */}
+          <a
+            href="https://ko-fi.com/elmontag"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
+            style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
+          >
+            <Coffee size={14} /> {t.kofiSupport}
+          </a>
         </div>
       </div>
 
       {/* Feature cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {features.map(({ Icon, title, desc, tab, color }) => (
           <button
             key={tab}
