@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials } from '@/lib/session';
+import { fetchAllFollowers } from '@/lib/bluesky';
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,33 +28,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ targetDid });
     }
 
-    // Fetch all followers with pagination
-    const followers: { did: string; handle: string; displayName?: string; avatar?: string; description?: string }[] = [];
-    let cursor: string | undefined;
-
-    do {
-      const response = await agent.getFollowers({
-        actor: targetHandle,
-        limit: 100,
-        cursor,
-      });
-
-      for (const f of response.data.followers) {
-        followers.push({
-          did: f.did,
-          handle: f.handle,
-          displayName: f.displayName,
-          avatar: f.avatar,
-          description: f.description,
-        });
-      }
-
-      cursor = response.data.cursor;
-
-      if (cursor) {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    } while (cursor);
+    const followers = await fetchAllFollowers(agent, targetHandle);
 
     return NextResponse.json({ followers, targetDid });
   } catch (err: unknown) {

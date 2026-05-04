@@ -37,6 +37,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+  const [targetDid, setTargetDid] = useState('');
 
   const [inlineSubSaved, setInlineSubSaved] = useState(false);
   const [inlineSubSaving, setInlineSubSaving] = useState(false);
@@ -98,6 +99,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
 
       const data = await res.json();
       const fetched: Follower[] = data.followers;
+      setTargetDid(data.targetDid ?? '');
       setFollowers(fetched);
 
       // Check mutuals + actioned if session is active
@@ -191,79 +193,51 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setStreamProgress(null);
     const dids: string[] = [...selected];
 
+    // Prepend target DID (cached from initial fetch) if not already included
+    if (targetDid && !dids.includes(targetDid)) dids.unshift(targetDid);
+
     const credFields = prefilled ? {} : { handle, password };
 
-    // Resolve target DID and prepend if not already included
+    // Always use SSE streaming — shows real progress even for small batches
+    const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
     try {
-      const resolveRes = await fetch('/api/bluesky/followers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...credFields, targetHandle, resolveOnly: true }),
-      });
-      if (resolveRes.ok) {
-        const data = await resolveRes.json();
-        if (data.targetDid && !dids.includes(data.targetDid)) dids.unshift(data.targetDid);
-      }
-    } catch { /* proceed */ }
-
-    // Use SSE streaming for large batches to avoid Next.js 60s timeout
-    if (dids.length > 200) {
-      const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
-      try {
-        const res = await fetch(streamEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...credFields, dids }),
-        });
-        if (!res.body) throw new Error('No stream body');
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() ?? '';
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const event = JSON.parse(line.slice(6));
-                if (event.error) throw new Error(event.error);
-                setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
-                if (event.complete) {
-                  setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
-                  setStep('done');
-                  return;
-                }
-              } catch (parseErr) {
-                if (parseErr instanceof Error && parseErr.message !== 'JSON') throw parseErr;
-              }
-            }
-          }
-        }
-        setStep('done');
-      } catch {
-        setResult({ succeeded: 0, failed: dids.length });
-        setStep('done');
-      }
-      return;
-    }
-
-    // Standard blocking POST for smaller batches
-    const endpoint = mode === 'block' ? '/api/bluesky/block' : '/api/bluesky/mute';
-    try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(streamEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...credFields, dids }),
       });
-      const data = await res.json();
-      setResult({ succeeded: data.succeeded || 0, failed: data.failed || 0 });
+      if (!res.body) throw new Error('No stream body');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.error) throw new Error(event.error);
+              setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+              if (event.complete) {
+                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                setStep('done');
+                return;
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== 'JSON') throw parseErr;
+            }
+          }
+        }
+      }
+      setStep('done');
     } catch {
       setResult({ succeeded: 0, failed: dids.length });
+      setStep('done');
     }
-    setStep('done');
   };
 
   const reset = () => {
@@ -273,6 +247,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setActionedDids({ blocked: new Set(), muted: new Set() }); setHideActioned(false);
     setInlineSubSaved(false);
     setStreamProgress(null);
+    setTargetDid('');
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     // If session credentials were prefilled, go back to target; otherwise back to credentials
@@ -559,6 +534,11 @@ export default function BlockMuteTool({ mode, t }: Props) {
                     style={{ width: `${(streamProgress.done / streamProgress.total) * 100}%`, backgroundColor: 'var(--accent)' }}
                   />
                 </div>
+                {streamProgress.done < streamProgress.total && (
+                  <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                    {t.streamingEta.replace('{secs}', String(Math.ceil((streamProgress.total - streamProgress.done) * 0.06)))}
+                  </p>
+                )}
               </div>
               <div className="flex gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
                 <span style={{ color: 'var(--success)' }}>✓ {streamProgress.succeeded}</span>

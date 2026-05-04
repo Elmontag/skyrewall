@@ -199,6 +199,7 @@ const en = {
   rateLimitWarning: 'Large operation: BlueSky may temporarily rate-limit this. The operation will pause automatically and retry.',
   rateLimitEstimate: 'Estimated time: ~{time}s',
   streamingProgress: '{done} / {total} processed',
+  streamingEta: '~{secs}s remaining',
 
   // Errors
   errorInvalidCreds: 'Invalid credentials. Please check your handle and app password.',

@@ -32,6 +32,7 @@ export default function PostInteractionTool({ t }: Props) {
   const [hideActioned, setHideActioned] = useState(false);
   const [savingPostSub, setSavingPostSub] = useState(false);
   const [postSubSaved, setPostSubSaved] = useState(false);
+  const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
 
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
@@ -97,21 +98,48 @@ export default function PostInteractionTool({ t }: Props) {
 
   const handleConfirm = async () => {
     setStep('processing');
+    setStreamProgress(null);
     const dids = [...selected];
     const credFields = prefilled ? {} : { handle, password };
-    const endpoint = mode === 'block' ? '/api/bluesky/block' : '/api/bluesky/mute';
+    const streamEndpoint = mode === 'block' ? '/api/bluesky/block-stream' : '/api/bluesky/mute-stream';
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(streamEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...credFields, dids, source: 'interaction' }),
       });
-      const data = await res.json();
-      setResult({ succeeded: data.succeeded || 0, failed: data.failed || 0 });
+      if (!res.body) throw new Error('No stream body');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.error) throw new Error(event.error);
+              setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+              if (event.complete) {
+                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                setStep('done');
+                return;
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== 'JSON') throw parseErr;
+            }
+          }
+        }
+      }
+      setStep('done');
     } catch {
       setResult({ succeeded: 0, failed: dids.length });
+      setStep('done');
     }
-    setStep('done');
   };
 
   const handleToggle = useCallback((did: string) => {
@@ -134,6 +162,7 @@ export default function PostInteractionTool({ t }: Props) {
     setInteractors([]); setSelected(new Set());
     setResult(null); setError('');
     setPostUrl('');
+    setStreamProgress(null);
     setActionedDids({ blocked: new Set(), muted: new Set() });
     setPostSubSaved(false);
     setStep(prefilled ? 'ready' : 'credentials');
@@ -344,9 +373,33 @@ export default function PostInteractionTool({ t }: Props) {
               : <ShieldX size={26} strokeWidth={1.5} className="pulse" />}
           </div>
           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t.processing}</p>
-          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
-            <div className="h-full progress-bar" style={{ width: '100%' }} />
-          </div>
+          {streamProgress ? (
+            <>
+              <div className="w-full flex flex-col gap-1.5">
+                <div className="flex justify-between text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span>{t.streamingProgress.replace('{done}', String(streamProgress.done)).replace('{total}', String(streamProgress.total))}</span>
+                  <span>{Math.round((streamProgress.done / streamProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+                  <div className="h-full rounded-full transition-all"
+                    style={{ width: `${(streamProgress.done / streamProgress.total) * 100}%`, backgroundColor: 'var(--accent)' }} />
+                </div>
+                {streamProgress.done < streamProgress.total && (
+                  <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                    {t.streamingEta.replace('{secs}', String(Math.ceil((streamProgress.total - streamProgress.done) * 0.06)))}
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--success)' }}>✓ {streamProgress.succeeded}</span>
+                {streamProgress.failed > 0 && <span style={{ color: 'var(--danger)' }}>✗ {streamProgress.failed}</span>}
+              </div>
+            </>
+          ) : (
+            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+              <div className="h-full progress-bar" style={{ width: '100%' }} />
+            </div>
+          )}
         </div>
       )}
 
