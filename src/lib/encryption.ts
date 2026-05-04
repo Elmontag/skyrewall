@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
@@ -48,4 +48,33 @@ export function decrypt(ciphertext: string): string {
   decipher.setAuthTag(tag);
 
   return decipher.update(encrypted).toString('utf8') + decipher.final('utf8');
+}
+
+const SESSION_HMAC_PREFIX = 'v1:';
+
+/** Signs session payload with HMAC-SHA256. Returns "v1:<payload>.<signature>" */
+export function signSession(payload: string): string {
+  const secret = process.env.ENCRYPTION_KEY;
+  if (!secret) throw new Error('ENCRYPTION_KEY environment variable is not set');
+  const sig = createHmac('sha256', secret).update(payload).digest('hex');
+  return `${SESSION_HMAC_PREFIX}${payload}.${sig}`;
+}
+
+/** Verifies HMAC signature and returns the original payload, or null on failure. */
+export function verifySession(token: string): string | null {
+  try {
+    const secret = process.env.ENCRYPTION_KEY;
+    if (!secret) return null;
+    if (!token.startsWith(SESSION_HMAC_PREFIX)) return null;
+    const withoutPrefix = token.slice(SESSION_HMAC_PREFIX.length);
+    const lastDot = withoutPrefix.lastIndexOf('.');
+    if (lastDot === -1) return null;
+    const payload = withoutPrefix.slice(0, lastDot);
+    const sig = withoutPrefix.slice(lastDot + 1);
+    const expected = createHmac('sha256', secret).update(payload).digest('hex');
+    if (!timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }

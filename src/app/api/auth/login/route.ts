@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { decrypt } from '@/lib/encryption';
+import { decrypt, signSession, verifySession } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
 import { cookies } from 'next/headers';
 
@@ -19,7 +19,9 @@ export async function GET() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
   try {
-    const { userId } = JSON.parse(Buffer.from(session.value, 'base64').toString());
+    const payload = verifySession(session.value);
+    if (!payload) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    const { userId } = JSON.parse(payload);
     const rows = await query<UserRow>('SELECT id, handle FROM users WHERE id = $1', [userId]);
     if (rows.length === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 });
     return NextResponse.json({ user: { id: rows[0].id, handle: rows[0].handle } });
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    const sessionData = Buffer.from(JSON.stringify({ userId: user.id })).toString('base64');
+    const sessionData = signSession(JSON.stringify({ userId: user.id }));
     const response = NextResponse.json({ success: true, user: { id: user.id, handle: user.handle } });
     response.cookies.set('session', sessionData, {
       httpOnly: true,

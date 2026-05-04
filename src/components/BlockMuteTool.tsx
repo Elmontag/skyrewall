@@ -1,12 +1,11 @@
 'use client';
 import { useState, useCallback } from 'react';
-import type { Follower, Mode, Language } from '@/types';
+import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
 
 interface Props {
   t: Translations;
-  lang: Language;
 }
 
 type Step = 'credentials' | 'target' | 'followers' | 'processing' | 'done';
@@ -16,8 +15,7 @@ interface Result {
   failed: number;
 }
 
-export default function BlockMuteTool({ t }: Props) {
-  const [step, setStep] = useState<Step>('credentials');
+export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = useState<Step>('credentials');
   const [mode, setMode] = useState<Mode>('block');
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');

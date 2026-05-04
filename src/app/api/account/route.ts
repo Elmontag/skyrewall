@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { verifySession } from '@/lib/encryption';
 import { cookies } from 'next/headers';
 
 async function getUserId(): Promise<string | null> {
@@ -7,7 +8,9 @@ async function getUserId(): Promise<string | null> {
   const session = cookieStore.get('session');
   if (!session) return null;
   try {
-    const { userId } = JSON.parse(Buffer.from(session.value, 'base64').toString());
+    const payload = verifySession(session.value);
+    if (!payload) return null;
+    const { userId } = JSON.parse(payload);
     return userId;
   } catch {
     return null;

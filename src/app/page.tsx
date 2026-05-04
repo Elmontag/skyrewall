@@ -63,7 +63,7 @@ export default function Home() {
 
       {/* Main content */}
       <main className="flex-1 px-4 py-8 max-w-4xl mx-auto w-full">
-        {tab === 'tool' && <BlockMuteTool t={t} lang={lang} />}
+        {tab === 'tool' && <BlockMuteTool t={t} />}
         {tab === 'subscriptions' && <SubscriptionManager t={t} />}
       </main>
 

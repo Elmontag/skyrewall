@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { encrypt } from '@/lib/encryption';
+import { encrypt, signSession } from '@/lib/encryption';
 import { BskyAgent } from '@atproto/api';
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     );
 
     const user = rows[0];
-    const sessionData = Buffer.from(JSON.stringify({ userId: user.id })).toString('base64');
+    const sessionData = signSession(JSON.stringify({ userId: user.id }));
     const response = NextResponse.json({ success: true, user: { id: user.id, handle: user.handle } });
     response.cookies.set('session', sessionData, {
       httpOnly: true,
