@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, LogIn, LogOut, type LucideIcon } from 'lucide-react';
 import type { Language, Mode } from '@/types';
 import en from '@/i18n/en';
 import de from '@/i18n/de';
@@ -25,7 +25,21 @@ export default function Home() {
   const [lang, setLang] = useState<Language>('en');
   const [tab, setTab] = useState<Tab>('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const t = lang === 'en' ? en : de;
+
+  // Check auth state on mount
+  useEffect(() => {
+    fetch('/api/auth/login', { method: 'GET' })
+      .then((r) => setLoggedIn(r.ok))
+      .catch(() => setLoggedIn(false));
+  }, []);
+
+  const handleSidebarLogout = async () => {
+    await fetch('/api/auth/login', { method: 'DELETE' });
+    setLoggedIn(false);
+    if (['account', 'subscriptions', 'stats'].includes(tab)) setTab('home');
+  };
 
   // Sync <html lang> and dark class on mount and lang changes
   useEffect(() => {
@@ -124,24 +138,51 @@ export default function Home() {
               {t.account}
             </span>
           </div>
-          {accountTabs.map(({ id, label, Icon }) => {
-            const active = tab === id;
-            return (
+          {loggedIn === false ? (
+            /* Not logged in: single login button */
+            <button
+              onClick={() => { setTab('account'); setSidebarOpen(false); }}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
+              style={{
+                backgroundColor: tab === 'account' ? 'var(--accent-muted)' : 'transparent',
+                color: tab === 'account' ? 'var(--accent)' : 'var(--text-secondary)',
+                border: tab === 'account' ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
+              }}
+            >
+              <LogIn size={17} strokeWidth={2} />
+              {t.login}
+            </button>
+          ) : (
+            /* Logged in: all 3 account tabs + logout */
+            <>
+              {accountTabs.map(({ id, label, Icon }) => {
+                const active = tab === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => { setTab(id); setSidebarOpen(false); }}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
+                    style={{
+                      backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
+                      color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                      border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
+                    }}
+                  >
+                    <Icon size={17} strokeWidth={active ? 2.5 : 2} />
+                    {label}
+                  </button>
+                );
+              })}
               <button
-                key={id}
-                onClick={() => { setTab(id); setSidebarOpen(false); }}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
-                style={{
-                  backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                  border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
-                }}
+                onClick={handleSidebarLogout}
+                className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all text-left w-full mt-1"
+                style={{ color: 'var(--danger)', border: '1px solid transparent' }}
               >
-                <Icon size={17} strokeWidth={active ? 2.5 : 2} />
-                {label}
+                <LogOut size={15} strokeWidth={2} />
+                {t.logout}
               </button>
-            );
-          })}
+            </>
+          )}
         </nav>
 
         {/* Bottom controls */}
@@ -213,7 +254,7 @@ export default function Home() {
           {tab === 'reblock' && <ReblockTool t={t} />}
           {tab === 'postblock' && <PostInteractionTool t={t} />}
           {tab === 'stats' && <StatsPanel t={t} onNeedLogin={() => setTab('account')} />}
-          {tab === 'account' && <AccountManager t={t} />}
+          {tab === 'account' && <AccountManager t={t} onLogin={() => setLoggedIn(true)} onLogout={() => { setLoggedIn(false); setTab('home'); }} />}
         </main>
       </div>
     </div>

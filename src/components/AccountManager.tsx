@@ -5,6 +5,8 @@ import type { Translations } from '@/i18n/en';
 
 interface Props {
   t: Translations;
+  onLogin?: () => void;
+  onLogout?: () => void;
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -43,7 +45,7 @@ function useUpdateField(field: 'handle' | 'password') {
   return { value, setValue, state, error, save };
 }
 
-export default function AccountManager({ t }: Props) {
+export default function AccountManager({ t, onLogin, onLogout }: Props) {
   const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [currentHandle, setCurrentHandle] = useState<string | null>(null);
   const [loginHandle, setLoginHandle] = useState('');
@@ -91,6 +93,7 @@ export default function AccountManager({ t }: Props) {
         setAuthStep('dashboard');
         setLoginHandle('');
         setLoginPassword('');
+        onLogin?.();
       } else {
         const data = await res.json().catch(() => ({}));
         setAuthError(data.error || t.errorInvalidCreds);
@@ -124,6 +127,7 @@ export default function AccountManager({ t }: Props) {
         setAuthStep('dashboard');
         setLoginHandle('');
         setLoginPassword('');
+        onLogin?.();
       } else {
         const data = await res.json().catch(() => ({}));
         setAuthError(data.error || t.errorGeneral);
@@ -138,6 +142,7 @@ export default function AccountManager({ t }: Props) {
     await fetch('/api/auth/login', { method: 'DELETE' });
     setAuthStep('login');
     setCurrentHandle(null);
+    onLogout?.();
   };
 
   const handleDeleteAccount = async () => {
@@ -148,6 +153,7 @@ export default function AccountManager({ t }: Props) {
       if (res.ok) {
         setAuthStep('login');
         setCurrentHandle(null);
+        onLogout?.();
       } else {
         setDeleteError('Delete failed');
       }
