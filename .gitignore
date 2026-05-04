@@ -31,3 +31,7 @@ next-env.d.ts
 # Production legal pages — commit *.template.md instead; fill in real data on the server
 /public/impressum.md
 /public/datenschutz.md
+
+# Local docker-compose — gitignored so production configs (ports, networks, secrets) stay local.
+# See docker-compose.example.yml for the template.
+docker-compose.yml

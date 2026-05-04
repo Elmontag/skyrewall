@@ -1,11 +1,13 @@
-# IMPORTANT: Before deploying to production, set all variables in your .env file.
+# docker-compose.example.yml — Copy to docker-compose.yml and adjust for your setup.
+# IMPORTANT: Set all variables in your .env file before deploying.
 # See .env.example for the expected format.
 # Generate secrets with: openssl rand -hex 32
 
 services:
   app:
     build: .
-    # Port 3000 is not exposed to the host — Nginx Proxy Manager reaches the container via the shared proxy_default network
+    ports:
+      - "3000:3000"         # Expose to host (use reverse proxy in production)
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
@@ -16,7 +18,6 @@ services:
         condition: service_healthy
     networks:
       - skyrewall-net
-      - proxy_default
     restart: unless-stopped
 
   postgres:
@@ -42,5 +43,3 @@ volumes:
 networks:
   skyrewall-net:
     driver: bridge
-  proxy_default:
-    external: true
