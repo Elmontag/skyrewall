@@ -50,9 +50,13 @@ export async function initDb(): Promise<void> {
     )
   `);
 
-  // Migration: add sub_type column to existing deployments
+  // Migrations for existing deployments
   await query(`
     ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sub_type VARCHAR(20) NOT NULL DEFAULT 'follower'
+  `).catch(() => {});
+
+  await query(`
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS config JSONB NOT NULL DEFAULT '{}'
   `).catch(() => {});
 
   await query(`

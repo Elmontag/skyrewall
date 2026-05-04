@@ -39,18 +39,20 @@ export default function Home() {
   }, []);
 
   const mainTabs: TabMeta[] = [
-    { id: 'home',          label: t.home,          description: t.homeSubtitle,     Icon: HomeIcon      },
-    { id: 'block',         label: t.blockTool,     description: t.blockToolDesc,    Icon: ShieldX       },
-    { id: 'mute',          label: t.muteTool,      description: t.muteToolDesc,     Icon: VolumeX       },
-    { id: 'subscriptions', label: t.subscriptions, description: t.subscribeDesc,    Icon: Bell          },
-    { id: 'reblock',       label: t.reblockTool,   description: t.reblockToolDesc,  Icon: RefreshCcw    },
-    { id: 'postblock',     label: t.postBlockTool, description: t.postBlockDesc,    Icon: MessageSquareX },
-    { id: 'stats',         label: t.statsTitle,    description: t.statsLast30Days,  Icon: BarChart2     },
+    { id: 'home',      label: t.home,          description: t.homeSubtitle,     Icon: HomeIcon       },
+    { id: 'block',     label: t.blockTool,     description: t.blockToolDesc,    Icon: ShieldX        },
+    { id: 'mute',      label: t.muteTool,      description: t.muteToolDesc,     Icon: VolumeX        },
+    { id: 'reblock',   label: t.reblockTool,   description: t.reblockToolDesc,  Icon: RefreshCcw     },
+    { id: 'postblock', label: t.postBlockTool, description: t.postBlockDesc,    Icon: MessageSquareX },
   ];
 
-  const accountTab: TabMeta = { id: 'account', label: t.account, description: t.accountDesc, Icon: UserCircle };
+  const accountTabs: TabMeta[] = [
+    { id: 'account',       label: t.accountSettings, description: t.accountDesc,       Icon: UserCircle },
+    { id: 'subscriptions', label: t.accountSubs,      description: t.subscribeDesc,     Icon: Bell       },
+    { id: 'stats',         label: t.accountStats,     description: t.statsLast30Days,   Icon: BarChart2  },
+  ];
 
-  const allTabs = [...mainTabs, accountTab];
+  const allTabs = [...mainTabs, ...accountTabs];
   const activeTab = allTabs.find((tb) => tb.id === tab)!;
 
   return (
@@ -90,8 +92,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Nav - main */}
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
+        {/* Nav - main tools */}
+        <nav className="px-3 py-4 flex flex-col gap-1" style={{ borderBottom: '1px solid var(--bg-border)' }}>
           {mainTabs.map(({ id, label, Icon }) => {
             const active = tab === id;
             return (
@@ -112,13 +114,21 @@ export default function Home() {
           })}
         </nav>
 
-        {/* Account nav */}
-        <div className="px-3 pb-1" style={{ borderTop: '1px solid var(--bg-border)', paddingTop: '12px' }}>
-          {(() => {
-            const { id, label, Icon } = accountTab;
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Nav - account area */}
+        <nav className="px-3 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid var(--bg-border)' }}>
+          <div className="px-3 pb-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
+              {t.account}
+            </span>
+          </div>
+          {accountTabs.map(({ id, label, Icon }) => {
             const active = tab === id;
             return (
               <button
+                key={id}
                 onClick={() => { setTab(id); setSidebarOpen(false); }}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
                 style={{
@@ -131,8 +141,8 @@ export default function Home() {
                 {label}
               </button>
             );
-          })()}
-        </div>
+          })}
+        </nav>
 
         {/* Bottom controls */}
         <div className="px-3 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--bg-border)' }}>
@@ -176,7 +186,7 @@ export default function Home() {
         {/* Tool header */}
         <div className="px-6 pt-8 pb-6" style={{ borderBottom: '1px solid var(--bg-border)' }}>
         <div className="flex items-center gap-4 mx-auto"
-            style={{ maxWidth: tab === 'home' || tab === 'block' || tab === 'mute' ? '1200px' : '672px' }}>
+            style={{ maxWidth: ['home', 'block', 'mute', 'reblock', 'postblock'].includes(tab) ? '1200px' : '672px' }}>
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
               <activeTab.Icon size={22} strokeWidth={2} />
@@ -194,15 +204,15 @@ export default function Home() {
 
         {/* Content */}
         <main className="flex-1 px-6 py-7 w-full mx-auto"
-          style={{ maxWidth: tab === 'home' || tab === 'block' || tab === 'mute' ? '1200px' : '672px' }}>
+          style={{ maxWidth: ['home', 'block', 'mute', 'reblock', 'postblock'].includes(tab) ? '1200px' : '672px' }}>
           {tab === 'home' && <HomePage t={t} onNavigate={(dest) => setTab(dest)} />}
           {(tab === 'block' || tab === 'mute') && (
             <BlockMuteTool key={tab} mode={tab as Mode} t={t} />
           )}
-          {tab === 'subscriptions' && <SubscriptionManager t={t} />}
+          {tab === 'subscriptions' && <SubscriptionManager t={t} onNeedLogin={() => setTab('account')} />}
           {tab === 'reblock' && <ReblockTool t={t} />}
           {tab === 'postblock' && <PostInteractionTool t={t} />}
-          {tab === 'stats' && <StatsPanel t={t} />}
+          {tab === 'stats' && <StatsPanel t={t} onNeedLogin={() => setTab('account')} />}
           {tab === 'account' && <AccountManager t={t} />}
         </main>
       </div>

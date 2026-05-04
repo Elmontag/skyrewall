@@ -6,6 +6,11 @@ const en = {
   account: 'Account',
   home: 'Home',
 
+  // Account area sidebar labels
+  accountSettings: 'Settings',
+  accountSubs: 'Subscriptions',
+  accountStats: 'Statistics',
+
   // Tool descriptions
   blockToolDesc: 'Block accounts and all their followers from your BlueSky profile.',
   muteToolDesc: 'Silently mute accounts and their followers without notifying them.',
@@ -130,6 +135,9 @@ const en = {
   reblockNoneFound: 'No accounts blocking you were found.',
   reblockSaveSubscription: 'Save as Reblock Subscription',
   reblockSubscriptionSaved: 'Reblock subscription saved',
+  reblockOnce: 'Scan once',
+  reblockSubscribe: 'Auto-subscription',
+  reblockCreateSub: 'Create Subscription',
 
   // Post Interaction Block
   postBlockTool: 'Post Block',
@@ -144,6 +152,22 @@ const en = {
   postInteractorListTitle: 'Post interactors',
   postNoInteractors: 'No interactors found.',
   postInteractionSelectType: 'Select at least one interaction type.',
+  postSubTypes: 'Monitor interaction types:',
+
+  // Inline subscription card (shared across tools)
+  saveAsSub: 'Save as Subscription',
+  subSaved: 'Subscription saved!',
+  subAlreadyExists: 'Already subscribed',
+
+  // Already-actioned filter
+  hideActioned: 'Hide already actioned',
+  showActioned: 'Show all',
+  alreadyBlocked: 'Already blocked',
+  alreadyMuted: 'Already muted',
+
+  // Auth prompts for non-authenticated views
+  needLoginDesc: 'Please log in to access this feature.',
+  goToSettings: 'Go to Settings',
 
   // Statistics
   statsTitle: 'Statistics',

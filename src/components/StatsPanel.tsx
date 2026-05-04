@@ -27,9 +27,10 @@ interface StatsData {
 
 interface Props {
   t: Translations;
+  onNeedLogin?: () => void;
 }
 
-export default function StatsPanel({ t }: Props) {
+export default function StatsPanel({ t, onNeedLogin }: Props) {
   const [data, setData] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
@@ -67,6 +68,13 @@ export default function StatsPanel({ t }: Props) {
         </div>
         <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.statsLoginRequired}</h2>
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.statsLoginRequiredDesc}</p>
+        {onNeedLogin && (
+          <button onClick={onNeedLogin}
+            className="px-5 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
+            {t.goToSettings}
+          </button>
+        )}
       </div>
     );
   }

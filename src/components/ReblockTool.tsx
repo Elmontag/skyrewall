@@ -21,11 +21,14 @@ export default function ReblockTool({ t }: Props) {
   const [blockers, setBlockers] = useState<Follower[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<Mode>('block');
+  const [reblockMode, setReblockMode] = useState<'scan' | 'subscribe'>('scan');
   const [step, setStep] = useState<'credentials' | 'ready' | 'loading' | 'list' | 'processing' | 'done'>('credentials');
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [savingSubscription, setSavingSubscription] = useState(false);
   const [subscriptionSaved, setSubscriptionSaved] = useState(false);
+  const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
+  const [hideActioned, setHideActioned] = useState(true);
 
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
@@ -67,6 +70,21 @@ export default function ReblockTool({ t }: Props) {
       const fetched: Follower[] = data.blockers ?? [];
       setBlockers(fetched);
       setSelected(new Set(fetched.map((f) => f.did)));
+
+      // Check already-actioned
+      if (prefilled && fetched.length > 0) {
+        fetch('/api/bluesky/check-actioned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
+        }).then(async (aRes) => {
+          if (aRes.ok) {
+            const aData = await aRes.json();
+            setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
+          }
+        }).catch(() => {});
+      }
+
       setStep('list');
     } catch {
       setError(t.errorNetwork);
@@ -123,6 +141,7 @@ export default function ReblockTool({ t }: Props) {
     setBlockers([]); setSelected(new Set());
     setResult(null); setError('');
     setSubscriptionSaved(false);
+    setActionedDids({ blocked: new Set(), muted: new Set() });
     setStep(prefilled ? 'ready' : 'credentials');
   };
 
@@ -174,6 +193,22 @@ export default function ReblockTool({ t }: Props) {
             <span>{t.usingSubscriptionAccount} <span className="font-mono font-semibold">@{handle}</span></span>
           </div>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.reblockDesc}</p>
+
+          {/* Reblock mode tabs */}
+          <div className="flex gap-2">
+            {(['scan', 'subscribe'] as const).map((m) => (
+              <button key={m} onClick={() => setReblockMode(m)}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all"
+                style={{
+                  backgroundColor: reblockMode === m ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                  color: reblockMode === m ? 'var(--accent)' : 'var(--text-secondary)',
+                  border: `1px solid ${reblockMode === m ? 'rgba(0,133,255,0.2)' : 'var(--bg-border)'}`,
+                }}>
+                {m === 'scan' ? t.reblockOnce : t.reblockSubscribe}
+              </button>
+            ))}
+          </div>
+
           <div className="flex gap-2">
             {(['block', 'mute'] as Mode[]).map((m) => (
               <button key={m} onClick={() => setMode(m)}
@@ -187,11 +222,26 @@ export default function ReblockTool({ t }: Props) {
               </button>
             ))}
           </div>
-          <button onClick={handleScan}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
-            <RefreshCw size={15} /> {t.reblockScan}
-          </button>
+
+          {reblockMode === 'scan' ? (
+            <button onClick={handleScan}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
+              <RefreshCw size={15} /> {t.reblockScan}
+            </button>
+          ) : (
+            subscriptionSaved
+              ? <span className="flex items-center gap-1.5 text-sm px-4 py-2.5 rounded-xl justify-center"
+                  style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: 'var(--success)' }}>
+                  <CheckCircle2 size={14} /> {t.reblockSubscriptionSaved}
+                </span>
+              : <button onClick={handleSaveSubscription} disabled={savingSubscription}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+                  style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)' }}>
+                  {savingSubscription ? <RefreshCw size={14} className="animate-spin" /> : <Bell size={14} />}
+                  {t.reblockCreateSub}
+                </button>
+          )}
         </div>
       )}
 
@@ -237,7 +287,10 @@ export default function ReblockTool({ t }: Props) {
                   onToggle={handleToggle}
                   onSelectAll={() => setSelected(new Set(blockers.map((f) => f.did)))}
                   onDeselectAll={() => setSelected(new Set())}
-                  t={t} />
+                  t={t}
+                  actionedDids={actionedDids}
+                  hideActioned={hideActioned}
+                  onHideActionedChange={setHideActioned} />
                 <div className="flex gap-3 pt-1 flex-wrap">
                   <button onClick={reset}
                     className="px-4 py-2.5 rounded-xl text-sm transition-colors"

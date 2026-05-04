@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, MessageSquareX, ShieldX, VolumeX, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MessageSquareX, ShieldX, VolumeX, Info, Bell, RefreshCw } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
@@ -28,6 +28,10 @@ export default function PostInteractionTool({ t }: Props) {
   const [step, setStep] = useState<'credentials' | 'ready' | 'loading' | 'list' | 'processing' | 'done'>('credentials');
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
+  const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
+  const [hideActioned, setHideActioned] = useState(false);
+  const [savingPostSub, setSavingPostSub] = useState(false);
+  const [postSubSaved, setPostSubSaved] = useState(false);
 
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
@@ -69,6 +73,21 @@ export default function PostInteractionTool({ t }: Props) {
       const fetched: Follower[] = data.interactors ?? [];
       setInteractors(fetched);
       setSelected(new Set(fetched.map((f) => f.did)));
+
+      // Check already-actioned
+      if (prefilled && fetched.length > 0) {
+        fetch('/api/bluesky/check-actioned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
+        }).then(async (aRes) => {
+          if (aRes.ok) {
+            const aData = await aRes.json();
+            setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
+          }
+        }).catch(() => {});
+      }
+
       setStep('list');
     } catch {
       setError(t.errorNetwork);
@@ -115,7 +134,30 @@ export default function PostInteractionTool({ t }: Props) {
     setInteractors([]); setSelected(new Set());
     setResult(null); setError('');
     setPostUrl('');
+    setActionedDids({ blocked: new Set(), muted: new Set() });
+    setPostSubSaved(false);
     setStep(prefilled ? 'ready' : 'credentials');
+  };
+
+  const handleSavePostSub = async () => {
+    setSavingPostSub(true);
+    try {
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_handle: postUrl,
+          mode,
+          sub_type: 'postinteraction',
+          config: { types: [...types] },
+        }),
+      });
+      if (res.ok || res.status === 409) {
+        setPostSubSaved(true);
+      }
+    } finally {
+      setSavingPostSub(false);
+    }
   };
 
   const card = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)' };
@@ -238,11 +280,31 @@ export default function PostInteractionTool({ t }: Props) {
           {interactors.length === 0
             ? <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>{t.postNoInteractors}</p>
             : <>
+                {/* Inline subscription card */}
+                {prefilled && postUrl.trim() && (
+                  <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}>
+                    <div className="flex items-center gap-2 text-sm font-medium" style={{ color: '#f97316' }}>
+                      <Bell size={13} /> {t.saveAsSub}
+                    </div>
+                    {postSubSaved
+                      ? <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--success)' }}><CheckCircle2 size={12} /> {t.subSaved}</span>
+                      : <button onClick={handleSavePostSub} disabled={savingPostSub}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 flex items-center gap-1.5"
+                          style={{ backgroundColor: 'rgba(249,115,22,0.12)', color: '#f97316', border: '1px solid rgba(249,115,22,0.25)' }}>
+                          {savingPostSub ? <RefreshCw size={11} className="animate-spin" /> : null}
+                          {t.reblockCreateSub}
+                        </button>
+                    }
+                  </div>
+                )}
                 <FollowerList followers={interactors} selected={selected}
                   onToggle={handleToggle}
                   onSelectAll={() => setSelected(new Set(interactors.map((f) => f.did)))}
                   onDeselectAll={() => setSelected(new Set())}
-                  t={t} />
+                  t={t}
+                  actionedDids={actionedDids}
+                  hideActioned={hideActioned}
+                  onHideActionedChange={setHideActioned} />
                 <div className="flex gap-3 pt-1">
                   <button onClick={reset}
                     className="px-4 py-2.5 rounded-xl text-sm"

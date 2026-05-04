@@ -1,112 +1,40 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { AlertTriangle, LogOut, Trash2, Check, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Trash2, Check, Plus, RefreshCw, Settings } from 'lucide-react';
 import type { Subscription, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
   t: Translations;
+  onNeedLogin?: () => void;
 }
 
-type AuthStep = 'login' | 'register' | 'dashboard';
-
-export default function SubscriptionManager({ t }: Props) {
-  const [authStep, setAuthStep] = useState<AuthStep>('login');
-  const [handle, setHandle] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function SubscriptionManager({ t, onNeedLogin }: Props) {
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [newTarget, setNewTarget] = useState('');
   const [newMode, setNewMode] = useState<Mode>('block');
   const [newIncludeFollowers, setNewIncludeFollowers] = useState(true);
-  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetch('/api/auth/login', { method: 'GET' })
       .then((r) => {
-        if (r.ok) {
-          setAuthStep('dashboard');
-          loadSubscriptions();
-        }
+        if (r.ok) { setLoggedIn(true); loadSubscriptions(); }
+        else setLoggedIn(false);
       })
-      .catch(() => {});
+      .catch(() => setLoggedIn(false));
   }, []);
 
   const loadSubscriptions = async () => {
     try {
       const res = await fetch('/api/subscriptions');
+      if (res.status === 401) { setLoggedIn(false); return; }
       if (res.ok) {
         const data = await res.json();
         setSubscriptions(data.subscriptions || []);
       }
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleLogin = async () => {
-    if (!handle.trim() || !password.trim()) {
-      setError(t.errorInvalidCreds);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, password }),
-      });
-      if (res.ok) {
-        setAuthStep('dashboard');
-        await loadSubscriptions();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || t.errorInvalidCreds);
-      }
-    } catch {
-      setError(t.errorNetwork);
-    }
-    setLoading(false);
-  };
-
-  const handleRegister = async () => {
-    if (!handle.trim() || !password.trim()) {
-      setError(t.errorInvalidCreds);
-      return;
-    }
-    if (!privacyAccepted) {
-      setError(t.errorPrivacyRequired);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, password }),
-      });
-      if (res.ok) {
-        setAuthStep('dashboard');
-        await loadSubscriptions();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || t.errorGeneral);
-      }
-    } catch {
-      setError(t.errorNetwork);
-    }
-    setLoading(false);
-  };
-
-  const handleLogout = async () => {
-    await fetch('/api/auth/login', { method: 'DELETE' });
-    setAuthStep('login');
-    setHandle('');
-    setPassword('');
-    setSubscriptions([]);
+    } catch { /* ignore */ }
   };
 
   const handleAddSubscription = async () => {
@@ -115,16 +43,10 @@ export default function SubscriptionManager({ t }: Props) {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_handle: newTarget,
-          mode: newMode,
-          include_followers: newIncludeFollowers,
-        }),
+        body: JSON.stringify({ target_handle: newTarget, mode: newMode, include_followers: newIncludeFollowers }),
       });
-      if (res.ok) {
-        setNewTarget('');
-        await loadSubscriptions();
-      }
+      if (res.status === 401) { setLoggedIn(false); return; }
+      if (res.ok) { setNewTarget(''); await loadSubscriptions(); }
     } catch {
       setError(t.errorGeneral);
     }
@@ -132,7 +54,8 @@ export default function SubscriptionManager({ t }: Props) {
 
   const handleDeleteSubscription = async (id: string) => {
     try {
-      await fetch(`/api/subscriptions/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/subscriptions/${id}`, { method: 'DELETE' });
+      if (res.status === 401) { setLoggedIn(false); return; }
       await loadSubscriptions();
     } catch {
       setError(t.errorGeneral);
@@ -142,93 +65,54 @@ export default function SubscriptionManager({ t }: Props) {
   const card = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)' };
   const input = { backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-primary)' };
 
-  const renderAuthForm = (isRegister: boolean) => (
-    <div className="rounded-2xl p-6 flex flex-col gap-5 max-w-sm mx-auto" style={card}>
-      <div>
-        <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {isRegister ? t.registerTitle : t.loginTitle}
-        </h2>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-          {t.subscribeDesc}
-        </p>
+  if (loggedIn === null) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <RefreshCw size={22} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />
       </div>
-      {error && (
-        <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
-          style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}>
-          <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {error}
-        </div>
-      )}
-      <div className="flex flex-col gap-3">
-        <div>
-          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
-          <input
-            type="text" value={handle} onChange={(e) => setHandle(e.target.value)}
-            placeholder={t.handlePlaceholder}
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-            style={input}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
-          <input
-            type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder={t.appPasswordPlaceholder}
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-            style={input}
-          />
-        </div>
-      </div>
-      {isRegister && (
-        <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl transition-all"
-          style={{ backgroundColor: privacyAccepted ? 'var(--accent-muted)' : 'var(--bg-dark)', border: `1px solid ${privacyAccepted ? 'var(--accent)' : 'var(--bg-border)'}` }}>
-          <input type="checkbox" checked={privacyAccepted} onChange={(e) => setPrivacyAccepted(e.target.checked)} className="sr-only" />
-          <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all"
-            style={{ borderColor: privacyAccepted ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: privacyAccepted ? 'var(--accent)' : 'transparent' }}>
-            {privacyAccepted && <Check size={10} strokeWidth={3} color="#fff" />}
-          </div>
-          <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            {t.privacyPolicyAccept}{' '}
-            <a href="/datenschutz"
-              style={{ color: 'var(--accent)', textDecoration: 'underline' }} onClick={(e) => e.stopPropagation()}>
-              {t.privacyPolicyLink}
-            </a>
-            {t.privacyPolicyAcceptSuffix}
-          </span>
-        </label>
-      )}
-      <button
-        onClick={isRegister ? handleRegister : handleLogin}
-        disabled={loading}
-        className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-        style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-      >
-        {loading && <RefreshCw size={14} className="animate-spin" />}
-        {loading ? t.loading : (isRegister ? t.register : t.login)}
-      </button>
-      <button onClick={() => { setAuthStep(isRegister ? 'login' : 'register'); setError(''); }}
-        className="text-sm text-center transition-colors"
-        style={{ color: 'var(--text-secondary)' }}>
-        {isRegister ? t.login : t.register} →
-      </button>
-    </div>
-  );
+    );
+  }
 
-  if (authStep === 'login') return renderAuthForm(false);
-  if (authStep === 'register') return renderAuthForm(true);
+  if (loggedIn === false) {
+    return (
+      <div className="rounded-2xl p-6 flex flex-col items-center gap-4 text-center" style={card}>
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+          style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
+          <Settings size={22} strokeWidth={1.5} />
+        </div>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.needLoginDesc}</p>
+        {onNeedLogin && (
+          <button onClick={onNeedLogin}
+            className="px-5 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
+            {t.goToSettings}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const subTypeBadge = (sub_type: string) => {
+    const styles: Record<string, React.CSSProperties> = {
+      follower:        { backgroundColor: 'rgba(0,133,255,0.1)',  color: '#0085ff' },
+      reblock:         { backgroundColor: 'rgba(139,92,246,0.1)', color: '#8b5cf6' },
+      postinteraction: { backgroundColor: 'rgba(249,115,22,0.1)', color: '#f97316' },
+    };
+    const labels: Record<string, string> = {
+      follower: 'follower', reblock: 'reblock', postinteraction: 'post',
+    };
+    return (
+      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={styles[sub_type] ?? styles.follower}>
+        {labels[sub_type] ?? sub_type}
+      </span>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subscribeTitle}</h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.subscribeDesc}</p>
-        </div>
-        <button onClick={handleLogout}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium transition-colors"
-          style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
-          <LogOut size={13} /> {t.logout}
-        </button>
+      <div>
+        <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subscribeTitle}</h2>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.subscribeDesc}</p>
       </div>
 
       {error && (
@@ -283,6 +167,7 @@ export default function SubscriptionManager({ t }: Props) {
                 @{sub.target_handle}
               </div>
               <div className="flex items-center gap-2 mt-1">
+                {subTypeBadge(sub.sub_type ?? 'follower')}
                 <span className="px-2 py-0.5 rounded-full text-xs font-medium"
                   style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
                   {sub.mode}

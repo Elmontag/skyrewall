@@ -16,8 +16,9 @@ export interface Subscription {
   id: string;
   target_handle: string;
   mode: 'block' | 'mute';
-  sub_type: 'follower' | 'reblock';
+  sub_type: 'follower' | 'reblock' | 'postinteraction';
   include_followers: boolean;
+  config: Record<string, unknown>;
   last_updated: string | null;
   created_at: string;
 }

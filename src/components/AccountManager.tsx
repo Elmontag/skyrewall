@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, Info } from 'lucide-react';
+import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+type AuthStep = 'login' | 'register' | 'dashboard';
 
 function useUpdateField(field: 'handle' | 'password') {
   const [value, setValue] = useState('');
@@ -43,9 +44,15 @@ function useUpdateField(field: 'handle' | 'password') {
 }
 
 export default function AccountManager({ t }: Props) {
+  const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [currentHandle, setCurrentHandle] = useState<string | null>(null);
-  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [loginHandle, setLoginHandle] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const handleField = useUpdateField('handle');
   const passwordField = useUpdateField('password');
@@ -56,13 +63,82 @@ export default function AccountManager({ t }: Props) {
         if (r.ok) {
           const data = await r.json();
           setCurrentHandle(data.user?.handle ?? null);
-          setLoggedIn(true);
+          setAuthStep('dashboard');
         } else {
-          setLoggedIn(false);
+          setAuthStep('login');
         }
       })
-      .catch(() => setLoggedIn(false));
+      .catch(() => setAuthStep('login'))
+      .finally(() => setLoading(false));
   }, [handleField.state]);
+
+  const handleLogin = async () => {
+    if (!loginHandle.trim() || !loginPassword.trim()) {
+      setAuthError(t.errorInvalidCreds);
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: loginHandle, password: loginPassword }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCurrentHandle(data.user?.handle ?? loginHandle);
+        setAuthStep('dashboard');
+        setLoginHandle('');
+        setLoginPassword('');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || t.errorInvalidCreds);
+      }
+    } catch {
+      setAuthError(t.errorNetwork);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleRegister = async () => {
+    if (!loginHandle.trim() || !loginPassword.trim()) {
+      setAuthError(t.errorInvalidCreds);
+      return;
+    }
+    if (!privacyAccepted) {
+      setAuthError(t.errorPrivacyRequired);
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: loginHandle, password: loginPassword }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCurrentHandle(data.user?.handle ?? loginHandle);
+        setAuthStep('dashboard');
+        setLoginHandle('');
+        setLoginPassword('');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || t.errorGeneral);
+      }
+    } catch {
+      setAuthError(t.errorNetwork);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/login', { method: 'DELETE' });
+    setAuthStep('login');
+    setCurrentHandle(null);
+  };
 
   const handleDeleteAccount = async () => {
     if (!confirm(t.deleteAccountConfirm)) return;
@@ -70,7 +146,7 @@ export default function AccountManager({ t }: Props) {
     try {
       const res = await fetch('/api/account', { method: 'DELETE' });
       if (res.ok) {
-        setLoggedIn(false);
+        setAuthStep('login');
         setCurrentHandle(null);
       } else {
         setDeleteError('Delete failed');
@@ -81,9 +157,9 @@ export default function AccountManager({ t }: Props) {
   };
 
   const card = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)' };
-  const input = { backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-primary)' };
+  const inputStyle = { backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-primary)' };
 
-  if (loggedIn === null) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
         <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />
@@ -91,16 +167,77 @@ export default function AccountManager({ t }: Props) {
     );
   }
 
-  if (!loggedIn) {
+  if (authStep === 'login' || authStep === 'register') {
+    const isRegister = authStep === 'register';
     return (
-      <div className="rounded-2xl p-6 flex items-start gap-4" style={card}>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)' }}>
-          <Info size={17} />
+      <div className="rounded-2xl p-6 flex flex-col gap-5 max-w-sm mx-auto" style={card}>
+        <div>
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {isRegister ? t.registerTitle : t.loginTitle}
+          </h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+            {t.subscribeDesc}
+          </p>
         </div>
-        <p className="text-sm pt-1.5" style={{ color: 'var(--text-secondary)' }}>
-          {t.accountNotLoggedIn}
-        </p>
+        {authError && (
+          <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+            style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}>
+            <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {authError}
+          </div>
+        )}
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
+            <input
+              type="text" value={loginHandle} onChange={(e) => setLoginHandle(e.target.value)}
+              placeholder={t.handlePlaceholder}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
+            <input
+              type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (isRegister ? handleRegister() : handleLogin())}
+              placeholder={t.appPasswordPlaceholder}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        {isRegister && (
+          <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl transition-all"
+            style={{ backgroundColor: privacyAccepted ? 'var(--accent-muted)' : 'var(--bg-dark)', border: `1px solid ${privacyAccepted ? 'var(--accent)' : 'var(--bg-border)'}` }}>
+            <input type="checkbox" checked={privacyAccepted} onChange={(e) => setPrivacyAccepted(e.target.checked)} className="sr-only" />
+            <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all"
+              style={{ borderColor: privacyAccepted ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: privacyAccepted ? 'var(--accent)' : 'transparent' }}>
+              {privacyAccepted && <Check size={10} strokeWidth={3} color="#fff" />}
+            </div>
+            <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              {t.privacyPolicyAccept}{' '}
+              <a href="/datenschutz"
+                style={{ color: 'var(--accent)', textDecoration: 'underline' }} onClick={(e) => e.stopPropagation()}>
+                {t.privacyPolicyLink}
+              </a>
+              {t.privacyPolicyAcceptSuffix}
+            </span>
+          </label>
+        )}
+        <button
+          onClick={isRegister ? handleRegister : handleLogin}
+          disabled={authLoading}
+          className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+        >
+          {authLoading && <RefreshCw size={14} className="animate-spin" />}
+          {authLoading ? t.loading : (isRegister ? t.register : t.login)}
+        </button>
+        <button onClick={() => { setAuthStep(isRegister ? 'login' : 'register'); setAuthError(''); }}
+          className="text-sm text-center transition-colors"
+          style={{ color: 'var(--text-secondary)' }}>
+          {isRegister ? t.login : t.register} →
+        </button>
       </div>
     );
   }
@@ -109,12 +246,19 @@ export default function AccountManager({ t }: Props) {
     <div className="flex flex-col gap-5 max-w-lg">
       {/* Current account */}
       {currentHandle && (
-        <div className="px-4 py-3 rounded-xl flex items-center gap-3"
+        <div className="px-4 py-3 rounded-xl flex items-center justify-between gap-3"
           style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid rgba(0,133,255,0.2)' }}>
-          <AtSign size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <span className="text-sm font-mono font-medium" style={{ color: 'var(--accent)' }}>
-            {currentHandle}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <AtSign size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            <span className="text-sm font-mono font-medium truncate" style={{ color: 'var(--accent)' }}>
+              {currentHandle}
+            </span>
+          </div>
+          <button onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium transition-colors flex-shrink-0"
+            style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
+            <LogOut size={12} /> {t.logout}
+          </button>
         </div>
       )}
 
@@ -127,7 +271,7 @@ export default function AccountManager({ t }: Props) {
         placeholder={t.handlePlaceholder}
         field={handleField}
         t={t}
-        input={input}
+        inputStyle={inputStyle}
       />
 
       {/* Update Password */}
@@ -139,7 +283,7 @@ export default function AccountManager({ t }: Props) {
         placeholder={t.appPasswordPlaceholder}
         field={passwordField}
         t={t}
-        input={input}
+        inputStyle={inputStyle}
       />
 
       {/* Danger Zone */}
@@ -174,10 +318,10 @@ interface UpdateCardProps {
   placeholder: string;
   field: ReturnType<typeof useUpdateField>;
   t: Translations;
-  input: React.CSSProperties;
+  inputStyle: React.CSSProperties;
 }
 
-function UpdateCard({ icon, title, desc, inputType, placeholder, field, t, input }: UpdateCardProps) {
+function UpdateCard({ icon, title, desc, inputType, placeholder, field, t, inputStyle }: UpdateCardProps) {
   const card = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)' };
 
   return (
@@ -200,13 +344,6 @@ function UpdateCard({ icon, title, desc, inputType, placeholder, field, t, input
         </div>
       )}
 
-      {field.state === 'saved' && (
-        <div className="px-3 py-2 rounded-xl text-xs flex items-center gap-2"
-          style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: 'var(--success)' }}>
-          <Check size={13} /> {t.changesSaved}
-        </div>
-      )}
-
       <div className="flex gap-2">
         <input
           type={inputType}
@@ -214,19 +351,16 @@ function UpdateCard({ icon, title, desc, inputType, placeholder, field, t, input
           onChange={(e) => field.setValue(e.target.value)}
           placeholder={placeholder}
           className="flex-1 px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-          style={input}
-          onKeyDown={(e) => e.key === 'Enter' && field.save()}
+          style={inputStyle}
         />
         <button
           onClick={field.save}
           disabled={field.state === 'saving' || !field.value.trim()}
-          className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 flex items-center gap-2 flex-shrink-0"
-          style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-        >
-          {field.state === 'saving'
-            ? <RefreshCw size={14} className="animate-spin" />
-            : <Check size={14} />}
-          {field.state === 'saving' ? t.saving : t.saveChanges}
+          className="px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-2"
+          style={{ backgroundColor: field.state === 'saved' ? 'var(--success-muted)' : 'var(--accent)', color: field.state === 'saved' ? 'var(--success)' : '#fff' }}>
+          {field.state === 'saving' && <RefreshCw size={13} className="animate-spin" />}
+          {field.state === 'saved' && <Check size={13} />}
+          {field.state === 'saved' ? t.saveChanges : t.saveChanges}
         </button>
       </div>
     </div>

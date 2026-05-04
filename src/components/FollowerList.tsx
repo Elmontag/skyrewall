@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Check, Search, Shield } from 'lucide-react';
+import { Check, Search, Shield, Lock } from 'lucide-react';
 import type { Follower } from '@/types';
 import type { Translations } from '@/i18n/en';
 
@@ -14,6 +14,9 @@ interface Props {
   mutualDids?: Set<string>;
   protectMutuals?: boolean;
   onProtectMutualsChange?: (v: boolean) => void;
+  actionedDids?: { blocked: Set<string>; muted: Set<string> };
+  hideActioned?: boolean;
+  onHideActionedChange?: (v: boolean) => void;
 }
 
 export default function FollowerList({
@@ -26,18 +29,26 @@ export default function FollowerList({
   mutualDids,
   protectMutuals = true,
   onProtectMutualsChange,
+  actionedDids,
+  hideActioned = false,
+  onHideActionedChange,
 }: Props) {
   const [search, setSearch] = useState('');
 
-  const filtered = search.trim()
-    ? followers.filter(
-        (f) =>
-          f.handle.toLowerCase().includes(search.toLowerCase()) ||
-          (f.displayName ?? '').toLowerCase().includes(search.toLowerCase())
-      )
-    : followers;
-
+  const hasActioned = actionedDids && (actionedDids.blocked.size > 0 || actionedDids.muted.size > 0);
   const hasMutuals = mutualDids && mutualDids.size > 0;
+
+  const isActioned = (did: string) =>
+    (actionedDids?.blocked.has(did) ?? false) || (actionedDids?.muted.has(did) ?? false);
+
+  const filtered = followers.filter((f) => {
+    if (hideActioned && isActioned(f.did)) return false;
+    if (!search.trim()) return true;
+    return (
+      f.handle.toLowerCase().includes(search.toLowerCase()) ||
+      (f.displayName ?? '').toLowerCase().includes(search.toLowerCase())
+    );
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -67,6 +78,20 @@ export default function FollowerList({
             {selected.size} / {followers.length} {t.selected}
           </span>
           <div className="flex gap-2 flex-wrap">
+            {hasActioned && onHideActionedChange && (
+              <button
+                onClick={() => onHideActionedChange(!hideActioned)}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg font-medium transition-colors"
+                style={{
+                  backgroundColor: hideActioned ? 'rgba(249,115,22,0.12)' : 'var(--bg-dark)',
+                  color: hideActioned ? 'rgb(249,115,22)' : 'var(--text-secondary)',
+                  border: `1px solid ${hideActioned ? 'rgba(249,115,22,0.4)' : 'var(--bg-border)'}`,
+                }}
+              >
+                <Lock size={11} />
+                {hideActioned ? t.showActioned : t.hideActioned}
+              </button>
+            )}
             {hasMutuals && onProtectMutualsChange && (
               <button
                 onClick={() => onProtectMutualsChange(!protectMutuals)}
@@ -106,13 +131,16 @@ export default function FollowerList({
             const isMutual = mutualDids?.has(follower.did) ?? false;
             const isProtected = isMutual && protectMutuals;
             const isSelected = selected.has(follower.did);
+            const wasActioned = isActioned(follower.did);
+            const isBlocked = actionedDids?.blocked.has(follower.did) ?? false;
+            const isMuted = actionedDids?.muted.has(follower.did) ?? false;
             return (
               <label
                 key={follower.did}
-                className={`flex items-center gap-2.5 p-2.5 rounded-xl transition-all ${isProtected ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl transition-all ${isProtected ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${wasActioned && !hideActioned ? 'opacity-60' : ''}`}
                 style={{
-                  backgroundColor: isSelected ? 'var(--accent-muted)' : isMutual ? 'rgba(34,197,94,0.08)' : 'var(--bg-dark)',
-                  border: `1px solid ${isSelected ? 'var(--accent)' : isMutual ? 'rgba(34,197,94,0.25)' : 'transparent'}`,
+                  backgroundColor: isSelected ? 'var(--accent-muted)' : isMutual ? 'rgba(34,197,94,0.08)' : wasActioned ? 'rgba(120,120,120,0.08)' : 'var(--bg-dark)',
+                  border: `1px solid ${isSelected ? 'var(--accent)' : isMutual ? 'rgba(34,197,94,0.25)' : wasActioned ? 'rgba(120,120,120,0.2)' : 'transparent'}`,
                 }}
               >
                 <input
@@ -122,7 +150,6 @@ export default function FollowerList({
                   disabled={isProtected}
                   className="sr-only"
                 />
-                {/* Avatar */}
                 {follower.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={follower.avatar} alt="" className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
@@ -134,19 +161,30 @@ export default function FollowerList({
                     {(follower.displayName || follower.handle)[0].toUpperCase()}
                   </div>
                 )}
-                {/* Info */}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1">
                     <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                       {follower.displayName || follower.handle}
                     </div>
                     {isMutual && <Shield size={10} style={{ color: 'rgb(34,197,94)', flexShrink: 0 }} />}
+                    {wasActioned && <Lock size={10} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />}
                   </div>
-                  <div className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-                    @{follower.handle}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
+                      @{follower.handle}
+                    </div>
+                    {isBlocked && (
+                      <span className="shrink-0 px-1 rounded" style={{ backgroundColor: 'rgba(240,71,71,0.1)', color: 'var(--danger)', fontSize: '10px' }}>
+                        {t.alreadyBlocked}
+                      </span>
+                    )}
+                    {!isBlocked && isMuted && (
+                      <span className="shrink-0 px-1 rounded" style={{ backgroundColor: 'rgba(249,115,22,0.1)', color: '#f97316', fontSize: '10px' }}>
+                        {t.alreadyMuted}
+                      </span>
+                    )}
                   </div>
                 </div>
-                {/* Checkbox indicator */}
                 <div
                   className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
                   style={{

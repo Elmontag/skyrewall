@@ -8,6 +8,11 @@ const de: Translations = {
   account: 'Konto',
   home: 'Start',
 
+  // Account area sidebar labels
+  accountSettings: 'Einstellungen',
+  accountSubs: 'Abonnements',
+  accountStats: 'Statistiken',
+
   // Tool descriptions
   blockToolDesc: 'Blockiere Accounts und alle ihre Follower von deinem BlueSky-Profil.',
   muteToolDesc: 'Stumm schalten von Accounts und ihren Followern, ohne sie zu benachrichtigen.',
@@ -132,6 +137,9 @@ const de: Translations = {
   reblockNoneFound: 'Keine blockierenden Konten gefunden.',
   reblockSaveSubscription: 'Als Reblock-Abo speichern',
   reblockSubscriptionSaved: 'Reblock-Abo gespeichert',
+  reblockOnce: 'Einmalig scannen',
+  reblockSubscribe: 'Auto-Abonnement',
+  reblockCreateSub: 'Abonnement erstellen',
 
   // Post Interaction Block
   postBlockTool: 'Post-Block',
@@ -146,6 +154,22 @@ const de: Translations = {
   postInteractorListTitle: 'Post-Interagierende',
   postNoInteractors: 'Keine Interagierenden gefunden.',
   postInteractionSelectType: 'Mindestens einen Interaktionstyp auswählen.',
+  postSubTypes: 'Interaktionstypen überwachen:',
+
+  // Inline subscription card (shared across tools)
+  saveAsSub: 'Als Abonnement speichern',
+  subSaved: 'Abonnement gespeichert!',
+  subAlreadyExists: 'Bereits abonniert',
+
+  // Already-actioned filter
+  hideActioned: 'Bereits bearbeitet ausblenden',
+  showActioned: 'Alle anzeigen',
+  alreadyBlocked: 'Bereits blockiert',
+  alreadyMuted: 'Bereits stumm',
+
+  // Auth prompts for non-authenticated views
+  needLoginDesc: 'Bitte melde dich an, um diese Funktion zu nutzen.',
+  goToSettings: 'Zu den Einstellungen',
 
   // Statistics
   statsTitle: 'Statistiken',

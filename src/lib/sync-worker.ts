@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, enrichProfileBatch } from '@/lib/bluesky';
+import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, enrichProfileBatch, fetchPostInteractors } from '@/lib/bluesky';
 
 interface SyncRow {
   sub_id: string;
@@ -9,6 +9,7 @@ interface SyncRow {
   mode: string;
   sub_type: string;
   include_followers: boolean;
+  config: Record<string, unknown>;
   handle: string;
   encrypted_password: string;
 }
@@ -17,7 +18,7 @@ async function logSyncEvents(
   userId: string,
   dids: string[],
   action: 'block' | 'mute',
-  source: 'subscription' | 'reblock'
+  source: 'subscription' | 'reblock' | 'interaction'
 ) {
   if (dids.length === 0) return;
   try {
@@ -33,7 +34,7 @@ async function logSyncEvents(
 
 async function syncAllSubscriptions(): Promise<void> {
   const rows = await query<SyncRow>(`
-    SELECT s.id AS sub_id, s.user_id, s.target_handle, s.mode, s.sub_type, s.include_followers,
+    SELECT s.id AS sub_id, s.user_id, s.target_handle, s.mode, s.sub_type, s.include_followers, s.config,
            u.handle, u.encrypted_password
     FROM subscriptions s
     JOIN users u ON s.user_id = u.id
@@ -51,12 +52,15 @@ async function syncAllSubscriptions(): Promise<void> {
       let dids: string[];
 
       if (row.sub_type === 'reblock') {
-        // Use ClearSky to get who blocks this user, then block them back
         dids = await fetchBlockedByFromClearSky(row.handle);
         if (dids.length > 0) {
-          // Enrich for logging purposes only; block by DID directly
-          await enrichProfileBatch(agent, dids.slice(0, 5)); // warm-up only
+          await enrichProfileBatch(agent, dids.slice(0, 5));
         }
+      } else if (row.sub_type === 'postinteraction') {
+        const config = (row.config ?? {}) as { types?: string[] };
+        const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
+        const interactors = await fetchPostInteractors(agent, row.target_handle, types);
+        dids = interactors.map((f) => f.did);
       } else if (row.include_followers) {
         const followers = await fetchAllFollowers(agent, row.target_handle);
         dids = followers.map((f) => f.did);
@@ -67,7 +71,9 @@ async function syncAllSubscriptions(): Promise<void> {
 
       if (dids.length > 0) {
         const action = row.mode as 'block' | 'mute';
-        const source = row.sub_type === 'reblock' ? 'reblock' : 'subscription';
+        const source: 'subscription' | 'reblock' | 'interaction' =
+          row.sub_type === 'reblock' ? 'reblock' :
+          row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
 
         if (action === 'block') {
           await blockAccounts(agent, dids);
@@ -75,7 +81,7 @@ async function syncAllSubscriptions(): Promise<void> {
           await muteAccounts(agent, dids);
         }
 
-        await logSyncEvents(row.user_id, dids, action, source as 'subscription' | 'reblock');
+        await logSyncEvents(row.user_id, dids, action, source);
       }
 
       await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
@@ -93,7 +99,6 @@ export function startSyncWorker(): void {
 
   console.log(`[sync] Worker started — interval: ${intervalMinutes} min`);
 
-  // Initial run shortly after startup, then on schedule
   setTimeout(() => {
     syncAllSubscriptions().catch((err) => console.error('[sync] Initial run failed:', err));
   }, 10_000);

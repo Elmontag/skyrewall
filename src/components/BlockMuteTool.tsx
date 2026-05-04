@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info, Bell } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
@@ -34,6 +34,10 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [result, setResult] = useState<Result | null>(null);
   const [mutualDids, setMutualDids] = useState<Set<string>>(new Set());
   const [protectMutuals, setProtectMutuals] = useState(true);
+  const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
+  const [hideActioned, setHideActioned] = useState(false);
+  const [inlineSubSaved, setInlineSubSaved] = useState(false);
+  const [inlineSubSaving, setInlineSubSaving] = useState(false);
 
   // Detect active subscription session — use server-stored credentials instead of asking user
   useEffect(() => {
@@ -96,26 +100,33 @@ export default function BlockMuteTool({ mode, t }: Props) {
       const fetched: Follower[] = data.followers;
       setFollowers(fetched);
 
-      // Check mutuals if session is active, then apply protection defaults
+      // Check mutuals + actioned if session is active
       if (prefilled && fetched.length > 0) {
-        try {
-          const mRes = await fetch('/api/bluesky/check-mutuals', {
+        const dids = fetched.map((f) => f.did);
+        const [mRes, aRes] = await Promise.all([
+          fetch('/api/bluesky/check-mutuals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
-          });
-          if (mRes.ok) {
-            const mData = await mRes.json();
-            const mSet = new Set<string>(mData.mutualDids ?? []);
-            setMutualDids(mSet);
-            // Default: protect ON → deselect mutuals. Protect OFF → select all including mutuals.
-            setSelected(new Set(fetched.filter((f) => !mSet.has(f.did)).map((f) => f.did)));
-          } else {
-            setSelected(new Set(fetched.map((f) => f.did)));
-          }
-        } catch {
-          setSelected(new Set(fetched.map((f) => f.did)));
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+          fetch('/api/bluesky/check-actioned', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+        ]);
+
+        let mSet = new Set<string>();
+        if (mRes?.ok) {
+          const mData = await mRes.json();
+          mSet = new Set<string>(mData.mutualDids ?? []);
+          setMutualDids(mSet);
         }
+        if (aRes?.ok) {
+          const aData = await aRes.json();
+          setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
+        }
+        setSelected(new Set(fetched.filter((f) => !mSet.has(f.did)).map((f) => f.did)));
       } else {
         setSelected(new Set(fetched.map((f) => f.did)));
       }
@@ -126,6 +137,19 @@ export default function BlockMuteTool({ mode, t }: Props) {
       setStep('target');
       setFetchProgress({ count: 0, loading: false });
     }
+  };
+
+  const handleSaveInlineSub = async () => {
+    setInlineSubSaving(true);
+    try {
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_handle: targetHandle, mode, sub_type: 'follower', include_followers: includeFollowers }),
+      });
+      if (res.ok) setInlineSubSaved(true);
+    } catch { /* ignore */ }
+    finally { setInlineSubSaving(false); }
   };
 
   const handleToggle = useCallback((did: string) => {
@@ -199,6 +223,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setTargetHandle('');
     setFollowers([]); setSelected(new Set());
     setMutualDids(new Set()); setProtectMutuals(true);
+    setActionedDids({ blocked: new Set(), muted: new Set() }); setHideActioned(false);
+    setInlineSubSaved(false);
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     // If session credentials were prefilled, go back to target; otherwise back to credentials
@@ -373,6 +399,25 @@ export default function BlockMuteTool({ mode, t }: Props) {
               {includeFollowers ? t.loadFollowers : t.next}
             </button>
           </div>
+          {/* Inline subscription card (session only, when target entered) */}
+          {prefilled && targetHandle.trim() && (
+            <div className="p-4 rounded-xl flex items-center justify-between gap-3"
+              style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}>
+              <div className="flex items-center gap-2 min-w-0">
+                <Bell size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.saveAsSub}</span>
+              </div>
+              {inlineSubSaved
+                ? <span className="text-xs flex items-center gap-1" style={{ color: 'var(--success)' }}><CheckCircle2 size={13} /> {t.subSaved}</span>
+                : <button onClick={handleSaveInlineSub} disabled={inlineSubSaving}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid rgba(0,133,255,0.2)' }}>
+                    {inlineSubSaving ? <RefreshCw size={11} className="animate-spin" /> : <Bell size={11} />}
+                    {t.saveAsSub}
+                  </button>
+              }
+            </div>
+          )}
         </div>
       )}
 
@@ -404,6 +449,9 @@ export default function BlockMuteTool({ mode, t }: Props) {
                     mutualDids={mutualDids}
                     protectMutuals={protectMutuals}
                     onProtectMutualsChange={handleProtectMutualsChange}
+                    actionedDids={actionedDids}
+                    hideActioned={hideActioned}
+                    onHideActionedChange={setHideActioned}
                   />
               }
               <div className="flex gap-3 pt-1">
