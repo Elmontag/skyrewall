@@ -1,5 +1,6 @@
 import { BskyAgent } from '@atproto/api';
 import type { Follower } from '@/types';
+import { query } from '@/lib/db';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
@@ -145,6 +146,66 @@ export async function muteAccounts(
   }
 
   return { succeeded, failed };
+}
+
+/**
+ * One-time import of a user's existing BlueSky blocks and mutes into block_events.
+ * Called on first subscription sync to warm the DB-diff cache (cold-start fix).
+ * Cost: O(existing_blocks / 100) + O(existing_mutes / 100) API requests — runs once.
+ */
+export async function importExistingActions(
+  agent: BskyAgent,
+  userId: string
+): Promise<{ blocksImported: number; mutesImported: number }> {
+  let blocksImported = 0;
+  let mutesImported = 0;
+
+  // Import existing blocks
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await agent.app.bsky.graph.getBlocks({ limit: 100, cursor });
+      const dids = res.data.blocks.map((b) => b.did);
+      if (dids.length > 0) {
+        const values = dids.map((_, i) => `('${userId}', $${i + 1}, 'block', 'imported')`).join(', ');
+        await query(
+          `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
+          dids
+        );
+        blocksImported += dids.length;
+      }
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 300));
+    } while (cursor);
+  } catch {
+    // Non-fatal — best effort
+  }
+
+  // Import existing mutes
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await agent.app.bsky.graph.getMutes({ limit: 100, cursor });
+      const dids = res.data.mutes.map((m) => m.did);
+      if (dids.length > 0) {
+        const values = dids.map((_, i) => `('${userId}', $${i + 1}, 'mute', 'imported')`).join(', ');
+        await query(
+          `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
+          dids
+        );
+        mutesImported += dids.length;
+      }
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 300));
+    } while (cursor);
+  } catch {
+    // Non-fatal — best effort
+  }
+
+  // Mark import as done
+  await query(`UPDATE users SET blocks_imported_at = NOW() WHERE id = $1`, [userId]).catch(() => {});
+
+  return { blocksImported, mutesImported };
 }
 
 /**

@@ -65,12 +65,64 @@ export async function initDb(): Promise<void> {
       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
       target_did TEXT NOT NULL,
       action TEXT NOT NULL CHECK (action IN ('block', 'mute')),
-      source TEXT NOT NULL CHECK (source IN ('manual', 'subscription', 'reblock', 'interaction')),
+      source TEXT NOT NULL CHECK (source IN ('manual', 'subscription', 'reblock', 'interaction', 'imported')),
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
+  // Allow 'imported' source for existing deployments that used a stricter CHECK
+  await query(`
+    ALTER TABLE block_events DROP CONSTRAINT IF EXISTS block_events_action_check
+  `).catch(() => {});
+  await query(`
+    ALTER TABLE block_events DROP CONSTRAINT IF EXISTS block_events_source_check
+  `).catch(() => {});
+  await query(`
+    ALTER TABLE block_events ADD CONSTRAINT block_events_action_check
+      CHECK (action IN ('block', 'mute'))
+  `).catch(() => {});
+  await query(`
+    ALTER TABLE block_events ADD CONSTRAINT block_events_source_check
+      CHECK (source IN ('manual', 'subscription', 'reblock', 'interaction', 'imported'))
+  `).catch(() => {});
+
+  // Deduplicate existing rows before adding unique constraint (keep oldest per combination)
+  await query(`
+    DELETE FROM block_events
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (user_id, target_did, action) id
+      FROM block_events
+      ORDER BY user_id, target_did, action, created_at ASC
+    )
+  `).catch(() => {});
+
+  // Add unique constraint so ON CONFLICT DO NOTHING actually prevents duplicates
+  await query(`
+    ALTER TABLE block_events
+    ADD CONSTRAINT block_events_unique UNIQUE (user_id, target_did, action)
+  `).catch(() => {});
+
   await query(`
     CREATE INDEX IF NOT EXISTS block_events_user_date ON block_events(user_id, created_at)
   `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS block_events_user_action ON block_events(user_id, action)
+  `);
+
+  // Whitelist: accounts that should never be actioned by subscription sync
+  await query(`
+    CREATE TABLE IF NOT EXISTS whitelists (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      target_did TEXT NOT NULL,
+      note TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, target_did)
+    )
+  `);
+
+  // Track whether user's existing BlueSky blocks have been imported (cold-start)
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS blocks_imported_at TIMESTAMPTZ
+  `).catch(() => {});
 }

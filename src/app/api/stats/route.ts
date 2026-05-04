@@ -22,28 +22,28 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const [totals, rolling, bySource, daily] = await Promise.all([
-    // Lifetime totals per action
+    // Lifetime unique accounts per action
     query<{ action: string; count: string }>(
-      `SELECT action, COUNT(*) as count FROM block_events WHERE user_id = $1 GROUP BY action`,
+      `SELECT action, COUNT(DISTINCT target_did) as count FROM block_events WHERE user_id = $1 GROUP BY action`,
       [userId]
     ),
-    // Rolling windows
+    // Rolling windows — unique accounts
     query<CountRow>(
       `SELECT
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day')   AS today,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')  AS week,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS month
+         COUNT(DISTINCT target_did) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day')   AS today,
+         COUNT(DISTINCT target_did) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')  AS week,
+         COUNT(DISTINCT target_did) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS month
        FROM block_events WHERE user_id = $1`,
       [userId]
     ),
-    // Breakdown by source
+    // Breakdown by source — unique accounts
     query<SourceRow>(
-      `SELECT source, COUNT(*) as count FROM block_events WHERE user_id = $1 GROUP BY source`,
+      `SELECT source, COUNT(DISTINCT target_did) as count FROM block_events WHERE user_id = $1 GROUP BY source`,
       [userId]
     ),
-    // Daily counts last 30 days
+    // Daily counts last 30 days — unique accounts per day/action
     query<DailyRow>(
-      `SELECT DATE(created_at) as date, action, COUNT(*) as count
+      `SELECT DATE(created_at) as date, action, COUNT(DISTINCT target_did) as count
        FROM block_events
        WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '30 days'
        GROUP BY DATE(created_at), action

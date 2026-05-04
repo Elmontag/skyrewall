@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, enrichProfileBatch, fetchPostInteractors } from '@/lib/bluesky';
+import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, enrichProfileBatch, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
 
 interface SyncRow {
   sub_id: string;
@@ -50,6 +50,33 @@ async function getAlreadyActionedDids(
   }
 }
 
+/** Returns DIDs on the user's whitelist — these are never actioned by subscriptions. */
+async function getWhitelistedDids(userId: string, dids: string[]): Promise<Set<string>> {
+  if (dids.length === 0) return new Set();
+  try {
+    const rows = await query<{ target_did: string }>(
+      `SELECT target_did FROM whitelists WHERE user_id = $1 AND target_did = ANY($2)`,
+      [userId, dids]
+    );
+    return new Set(rows.map((r) => r.target_did));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Returns true if this user's existing BlueSky blocks have already been imported. */
+async function hasImportedExistingBlocks(userId: string): Promise<boolean> {
+  try {
+    const rows = await query<{ blocks_imported_at: string | null }>(
+      `SELECT blocks_imported_at FROM users WHERE id = $1`,
+      [userId]
+    );
+    return rows.length > 0 && rows[0].blocks_imported_at !== null;
+  } catch {
+    return true; // On error, skip import to avoid accidental spam
+  }
+}
+
 async function syncAllSubscriptions(): Promise<void> {
   const rows = await query<SyncRow>(`
     SELECT s.id AS sub_id, s.user_id, s.target_handle, s.mode, s.sub_type, s.include_followers, s.config,
@@ -62,10 +89,24 @@ async function syncAllSubscriptions(): Promise<void> {
 
   console.log(`[sync] Processing ${rows.length} subscription(s)...`);
 
+  // Track which users have already had their cold-start import done this run
+  const importedUsers = new Set<string>();
+
   for (const row of rows) {
     try {
       const password = decrypt(row.encrypted_password);
       const agent = await createAgent(row.handle, password);
+
+      // Cold-start: import existing BlueSky blocks/mutes once per user
+      if (!importedUsers.has(row.user_id)) {
+        const alreadyImported = await hasImportedExistingBlocks(row.user_id);
+        if (!alreadyImported) {
+          console.log(`[sync] Cold-start import for ${row.handle}...`);
+          const { blocksImported, mutesImported } = await importExistingActions(agent, row.user_id);
+          console.log(`[sync] Imported ${blocksImported} blocks + ${mutesImported} mutes for ${row.handle}`);
+        }
+        importedUsers.add(row.user_id);
+      }
 
       let dids: string[];
 
@@ -93,9 +134,13 @@ async function syncAllSubscriptions(): Promise<void> {
           row.sub_type === 'reblock' ? 'reblock' :
           row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
 
+        // Filter out whitelisted DIDs (never actioned by subscriptions)
+        const whitelisted = await getWhitelistedDids(row.user_id, dids);
+        const nonWhitelisted = dids.filter((d) => !whitelisted.has(d));
+
         // Filter out DIDs already actioned in a previous sync (0 extra API calls)
-        const alreadyActioned = await getAlreadyActionedDids(row.user_id, dids, action);
-        const newDids = dids.filter((d) => !alreadyActioned.has(d));
+        const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
+        const newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
 
         if (newDids.length > 0) {
           if (action === 'block') {
@@ -107,7 +152,8 @@ async function syncAllSubscriptions(): Promise<void> {
         }
 
         const skipped = alreadyActioned.size;
-        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped)`);
+        const wlSkipped = whitelisted.size;
+        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped, ${wlSkipped} whitelisted)`);
       } else {
         console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, 0 accounts)`);
       }
