@@ -5,8 +5,7 @@
 services:
   app:
     build: .
-    ports:
-      - "3000:3000"
+    # Port 3000 is not exposed to the host — Nginx Proxy Manager reaches the container via the shared proxy_default network
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
@@ -17,6 +16,7 @@ services:
         condition: service_healthy
     networks:
       - skyrewall-net
+      - proxy_default
     restart: unless-stopped
 
   postgres:
@@ -42,3 +42,5 @@ volumes:
 networks:
   skyrewall-net:
     driver: bridge
+  proxy_default:
+    external: true
