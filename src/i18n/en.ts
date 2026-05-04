@@ -114,6 +114,55 @@ const en = {
   impressum: 'Imprint',
   privacyPolicy: 'Privacy Policy',
 
+  // Mutual Protection
+  protectMutuals: 'Protect Mutuals',
+  mutualProtectionOn: 'Mutuals protected (deselected)',
+  mutualProtectionOff: 'Mutual protection off',
+
+  // Reblock
+  reblockTool: 'Reblock',
+  reblockToolDesc: 'Find accounts that have blocked you and block them back.',
+  reblockDesc: 'Scan your social graph for accounts that have blocked you, then block or mute them back.',
+  reblockScan: 'Scan for blockers',
+  reblockScanning: 'Scanning for blockers…',
+  reblockListTitle: 'Accounts blocking you',
+  reblockFound: 'found',
+  reblockNoneFound: 'No accounts blocking you were found.',
+  reblockSaveSubscription: 'Save as Reblock Subscription',
+  reblockSubscriptionSaved: 'Reblock subscription saved',
+
+  // Post Interaction Block
+  postBlockTool: 'Post Block',
+  postBlockDesc: 'Block or mute users who interacted with a specific post.',
+  postUrlLabel: 'Post URL or AT-URI',
+  postInteractionTypes: 'Interaction types',
+  postTypeLikes: '❤ Likes',
+  postTypeReposts: '🔁 Reposts',
+  postTypeQuotes: '💬 Quotes',
+  postLoadInteractors: 'Load interactors',
+  postLoadingInteractors: 'Loading interactors…',
+  postInteractorListTitle: 'Post interactors',
+  postNoInteractors: 'No interactors found.',
+  postInteractionSelectType: 'Select at least one interaction type.',
+
+  // Statistics
+  statsTitle: 'Statistics',
+  statsTotal: 'Total',
+  statsBlocks: 'blocks',
+  statsMutes: 'mutes',
+  statsToday: 'Today',
+  statsWeek: 'This Week',
+  statsMonth: 'This Month',
+  statsBySource: 'By Source',
+  statsLast30Days: 'Last 30 Days',
+  statsManual: 'Manual',
+  statsSubscription: 'Subscription',
+  statsReblock: 'Reblock',
+  statsInteraction: 'Post Interaction',
+  statsLoginRequired: 'Login required',
+  statsLoginRequiredDesc: 'You must be logged in to the Subscriptions feature to view statistics.',
+  statsNoData: 'No data yet.',
+
   // Errors
   errorInvalidCreds: 'Invalid credentials. Please check your handle and app password.',
   errorNetwork: 'Network error. Please try again.',

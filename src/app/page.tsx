@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, type LucideIcon } from 'lucide-react';
 import type { Language, Mode } from '@/types';
 import en from '@/i18n/en';
 import de from '@/i18n/de';
@@ -8,8 +8,11 @@ import BlockMuteTool from '@/components/BlockMuteTool';
 import SubscriptionManager from '@/components/SubscriptionManager';
 import HomePage from '@/components/HomePage';
 import AccountManager from '@/components/AccountManager';
+import ReblockTool from '@/components/ReblockTool';
+import PostInteractionTool from '@/components/PostInteractionTool';
+import StatsPanel from '@/components/StatsPanel';
 
-type Tab = 'home' | 'block' | 'mute' | 'subscriptions' | 'account';
+type Tab = 'home' | 'block' | 'mute' | 'subscriptions' | 'reblock' | 'postblock' | 'stats' | 'account';
 
 interface TabMeta {
   id: Tab;
@@ -36,10 +39,13 @@ export default function Home() {
   }, []);
 
   const mainTabs: TabMeta[] = [
-    { id: 'home',          label: t.home,          description: t.homeSubtitle,  Icon: HomeIcon  },
-    { id: 'block',         label: t.blockTool,     description: t.blockToolDesc, Icon: ShieldX  },
-    { id: 'mute',          label: t.muteTool,       description: t.muteToolDesc,  Icon: VolumeX  },
-    { id: 'subscriptions', label: t.subscriptions, description: t.subscribeDesc, Icon: Bell     },
+    { id: 'home',          label: t.home,          description: t.homeSubtitle,     Icon: HomeIcon      },
+    { id: 'block',         label: t.blockTool,     description: t.blockToolDesc,    Icon: ShieldX       },
+    { id: 'mute',          label: t.muteTool,      description: t.muteToolDesc,     Icon: VolumeX       },
+    { id: 'subscriptions', label: t.subscriptions, description: t.subscribeDesc,    Icon: Bell          },
+    { id: 'reblock',       label: t.reblockTool,   description: t.reblockToolDesc,  Icon: RefreshCcw    },
+    { id: 'postblock',     label: t.postBlockTool, description: t.postBlockDesc,    Icon: MessageSquareX },
+    { id: 'stats',         label: t.statsTitle,    description: t.statsLast30Days,  Icon: BarChart2     },
   ];
 
   const accountTab: TabMeta = { id: 'account', label: t.account, description: t.accountDesc, Icon: UserCircle };
@@ -194,6 +200,9 @@ export default function Home() {
             <BlockMuteTool key={tab} mode={tab as Mode} t={t} />
           )}
           {tab === 'subscriptions' && <SubscriptionManager t={t} />}
+          {tab === 'reblock' && <ReblockTool t={t} />}
+          {tab === 'postblock' && <PostInteractionTool t={t} />}
+          {tab === 'stats' && <StatsPanel t={t} />}
           {tab === 'account' && <AccountManager t={t} />}
         </main>
       </div>

@@ -116,6 +116,55 @@ const de: Translations = {
   impressum: 'Impressum',
   privacyPolicy: 'Datenschutzerklärung',
 
+  // Mutual Protection
+  protectMutuals: 'Mutuals schützen',
+  mutualProtectionOn: 'Mutuals geschützt (abgewählt)',
+  mutualProtectionOff: 'Mutual-Schutz deaktiviert',
+
+  // Reblock
+  reblockTool: 'Zurückblockieren',
+  reblockToolDesc: 'Konten finden, die dich blockiert haben, und sie zurückblockieren.',
+  reblockDesc: 'Scanne deinen sozialen Graphen nach Konten, die dich blockiert haben, und blockiere oder schalte sie stumm.',
+  reblockScan: 'Nach Blockierenden suchen',
+  reblockScanning: 'Suche nach Blockierenden…',
+  reblockListTitle: 'Konten, die dich blockieren',
+  reblockFound: 'gefunden',
+  reblockNoneFound: 'Keine blockierenden Konten gefunden.',
+  reblockSaveSubscription: 'Als Reblock-Abo speichern',
+  reblockSubscriptionSaved: 'Reblock-Abo gespeichert',
+
+  // Post Interaction Block
+  postBlockTool: 'Post-Block',
+  postBlockDesc: 'Nutzer blockieren oder stummschalten, die mit einem bestimmten Post interagiert haben.',
+  postUrlLabel: 'Post-URL oder AT-URI',
+  postInteractionTypes: 'Interaktionstypen',
+  postTypeLikes: '❤ Likes',
+  postTypeReposts: '🔁 Reposts',
+  postTypeQuotes: '💬 Zitate',
+  postLoadInteractors: 'Interagierende laden',
+  postLoadingInteractors: 'Lade Interagierende…',
+  postInteractorListTitle: 'Post-Interagierende',
+  postNoInteractors: 'Keine Interagierenden gefunden.',
+  postInteractionSelectType: 'Mindestens einen Interaktionstyp auswählen.',
+
+  // Statistics
+  statsTitle: 'Statistiken',
+  statsTotal: 'Gesamt',
+  statsBlocks: 'Blockierungen',
+  statsMutes: 'Stummschaltungen',
+  statsToday: 'Heute',
+  statsWeek: 'Diese Woche',
+  statsMonth: 'Dieser Monat',
+  statsBySource: 'Nach Quelle',
+  statsLast30Days: 'Letzte 30 Tage',
+  statsManual: 'Manuell',
+  statsSubscription: 'Abonnement',
+  statsReblock: 'Reblock',
+  statsInteraction: 'Post-Interaktion',
+  statsLoginRequired: 'Anmeldung erforderlich',
+  statsLoginRequiredDesc: 'Du musst beim Abonnement-Feature angemeldet sein, um Statistiken anzusehen.',
+  statsNoData: 'Noch keine Daten.',
+
   // Errors
   errorInvalidCreds: 'Ungültige Anmeldedaten. Bitte überprüfe Handle und App-Passwort.',
   errorNetwork: 'Netzwerkfehler. Bitte versuche es erneut.',

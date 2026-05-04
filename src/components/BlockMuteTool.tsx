@@ -32,6 +32,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [error, setError] = useState('');
   const [fetchProgress, setFetchProgress] = useState({ count: 0, loading: false });
   const [result, setResult] = useState<Result | null>(null);
+  const [mutualDids, setMutualDids] = useState<Set<string>>(new Set());
+  const [protectMutuals, setProtectMutuals] = useState(true);
 
   // Detect active subscription session — use server-stored credentials instead of asking user
   useEffect(() => {
@@ -93,7 +95,31 @@ export default function BlockMuteTool({ mode, t }: Props) {
       const data = await res.json();
       const fetched: Follower[] = data.followers;
       setFollowers(fetched);
-      setSelected(new Set(fetched.map((f) => f.did)));
+
+      // Check mutuals if session is active, then apply protection defaults
+      if (prefilled && fetched.length > 0) {
+        try {
+          const mRes = await fetch('/api/bluesky/check-mutuals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
+          });
+          if (mRes.ok) {
+            const mData = await mRes.json();
+            const mSet = new Set<string>(mData.mutualDids ?? []);
+            setMutualDids(mSet);
+            // Default: protect ON → deselect mutuals. Protect OFF → select all including mutuals.
+            setSelected(new Set(fetched.filter((f) => !mSet.has(f.did)).map((f) => f.did)));
+          } else {
+            setSelected(new Set(fetched.map((f) => f.did)));
+          }
+        } catch {
+          setSelected(new Set(fetched.map((f) => f.did)));
+        }
+      } else {
+        setSelected(new Set(fetched.map((f) => f.did)));
+      }
+
       setFetchProgress({ count: fetched.length, loading: false });
     } catch {
       setError(t.errorNetwork);
@@ -110,8 +136,31 @@ export default function BlockMuteTool({ mode, t }: Props) {
     });
   }, []);
 
-  const handleSelectAll = useCallback(() => setSelected(new Set(followers.map((f) => f.did))), [followers]);
+  const handleSelectAll = useCallback(() => {
+    // When protect is on, exclude protected mutuals from select-all
+    setSelected(new Set(followers.filter((f) => !(protectMutuals && mutualDids.has(f.did))).map((f) => f.did)));
+  }, [followers, protectMutuals, mutualDids]);
+
   const handleDeselectAll = useCallback(() => setSelected(new Set()), []);
+
+  const handleProtectMutualsChange = (value: boolean) => {
+    setProtectMutuals(value);
+    if (!value) {
+      // Toggling protection OFF → auto-select the mutuals
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const did of mutualDids) next.add(did);
+        return next;
+      });
+    } else {
+      // Toggling protection ON → deselect mutuals
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const did of mutualDids) next.delete(did);
+        return next;
+      });
+    }
+  };
 
   const handleConfirm = async () => {
     setStep('processing');
@@ -149,6 +198,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const reset = () => {
     setTargetHandle('');
     setFollowers([]); setSelected(new Set());
+    setMutualDids(new Set()); setProtectMutuals(true);
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     // If session credentials were prefilled, go back to target; otherwise back to credentials
@@ -344,7 +394,17 @@ export default function BlockMuteTool({ mode, t }: Props) {
             <>
               {followers.length === 0
                 ? <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>{t.noFollowers}</p>
-                : <FollowerList followers={followers} selected={selected} onToggle={handleToggle} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} t={t} />
+                : <FollowerList
+                    followers={followers}
+                    selected={selected}
+                    onToggle={handleToggle}
+                    onSelectAll={handleSelectAll}
+                    onDeselectAll={handleDeselectAll}
+                    t={t}
+                    mutualDids={mutualDids}
+                    protectMutuals={protectMutuals}
+                    onProtectMutualsChange={handleProtectMutualsChange}
+                  />
               }
               <div className="flex gap-3 pt-1">
                 <button

@@ -1,13 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials, isValidDid } from '@/lib/session';
+import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
+import { query } from '@/lib/db';
 
 const MAX_DIDS = 5000;
+
+async function logBlockEvents(
+  userId: string | null,
+  dids: string[],
+  source: string
+) {
+  if (!userId || dids.length === 0) return;
+  try {
+    const values = dids.map((_, i) => `($1, $${i + 2}, 'block', '${source}')`).join(', ');
+    await query(
+      `INSERT INTO block_events (user_id, target_did, action, source) VALUES ${values} ON CONFLICT DO NOTHING`,
+      [userId, ...dids]
+    );
+  } catch {
+    // Non-fatal — logging failure should not fail the request
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { dids } = body;
+    const { dids, source = 'manual' } = body;
 
     if (!Array.isArray(dids)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -18,6 +36,9 @@ export async function POST(req: NextRequest) {
     if (!dids.every(isValidDid)) {
       return NextResponse.json({ error: 'One or more DIDs are invalid' }, { status: 400 });
     }
+
+    const validSources = ['manual', 'reblock', 'interaction'];
+    const resolvedSource = validSources.includes(source) ? source : 'manual';
 
     const sessionCreds = await getSessionCredentials();
     const handle: string | undefined = sessionCreds?.handle ?? body.handle;
@@ -37,6 +58,7 @@ export async function POST(req: NextRequest) {
 
     let succeeded = 0;
     let failed = 0;
+    const succeededDids: string[] = [];
     const batchSize = 10;
 
     for (let i = 0; i < dids.length; i += batchSize) {
@@ -49,14 +71,18 @@ export async function POST(req: NextRequest) {
           )
         )
       );
-      for (const r of results) {
-        if (r.status === 'fulfilled') succeeded++;
+      results.forEach((r, idx) => {
+        if (r.status === 'fulfilled') { succeeded++; succeededDids.push(batch[idx]); }
         else failed++;
-      }
+      });
       if (i + batchSize < dids.length) {
         await new Promise((r) => setTimeout(r, 500));
       }
     }
+
+    // Log events asynchronously (fire-and-forget, non-fatal)
+    const userId = await getSessionUserId();
+    logBlockEvents(userId, succeededDids, resolvedSource).catch(() => {});
 
     return NextResponse.json({ succeeded, failed });
   } catch (err: unknown) {
@@ -67,4 +93,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to block accounts' }, { status: 500 });
   }
 }
-

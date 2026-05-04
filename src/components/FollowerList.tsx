@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Check, Search } from 'lucide-react';
+import { Check, Search, Shield } from 'lucide-react';
 import type { Follower } from '@/types';
 import type { Translations } from '@/i18n/en';
 
@@ -11,9 +11,22 @@ interface Props {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   t: Translations;
+  mutualDids?: Set<string>;
+  protectMutuals?: boolean;
+  onProtectMutualsChange?: (v: boolean) => void;
 }
 
-export default function FollowerList({ followers, selected, onToggle, onSelectAll, onDeselectAll, t }: Props) {
+export default function FollowerList({
+  followers,
+  selected,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+  t,
+  mutualDids,
+  protectMutuals = true,
+  onProtectMutualsChange,
+}: Props) {
   const [search, setSearch] = useState('');
 
   const filtered = search.trim()
@@ -23,6 +36,8 @@ export default function FollowerList({ followers, selected, onToggle, onSelectAl
           (f.displayName ?? '').toLowerCase().includes(search.toLowerCase())
       )
     : followers;
+
+  const hasMutuals = mutualDids && mutualDids.size > 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,11 +62,25 @@ export default function FollowerList({ followers, selected, onToggle, onSelectAl
             }}
           />
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
             {selected.size} / {followers.length} {t.selected}
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {hasMutuals && onProtectMutualsChange && (
+              <button
+                onClick={() => onProtectMutualsChange(!protectMutuals)}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg font-medium transition-colors"
+                style={{
+                  backgroundColor: protectMutuals ? 'rgba(34,197,94,0.15)' : 'var(--accent-muted)',
+                  color: protectMutuals ? 'rgb(34,197,94)' : 'var(--accent)',
+                  border: `1px solid ${protectMutuals ? 'rgba(34,197,94,0.4)' : 'rgba(0,133,255,0.2)'}`,
+                }}
+              >
+                <Shield size={11} />
+                {t.protectMutuals}
+              </button>
+            )}
             <button
               onClick={onSelectAll}
               className="px-3 py-1 text-xs rounded-lg font-medium transition-colors"
@@ -74,17 +103,25 @@ export default function FollowerList({ followers, selected, onToggle, onSelectAl
       <div className="overflow-y-auto max-h-[60vh] -mx-1 px-1">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5">
           {filtered.map((follower) => {
+            const isMutual = mutualDids?.has(follower.did) ?? false;
+            const isProtected = isMutual && protectMutuals;
             const isSelected = selected.has(follower.did);
             return (
               <label
                 key={follower.did}
-                className="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all"
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl transition-all ${isProtected ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
                 style={{
-                  backgroundColor: isSelected ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                  border: `1px solid ${isSelected ? 'var(--accent)' : 'transparent'}`,
+                  backgroundColor: isSelected ? 'var(--accent-muted)' : isMutual ? 'rgba(34,197,94,0.08)' : 'var(--bg-dark)',
+                  border: `1px solid ${isSelected ? 'var(--accent)' : isMutual ? 'rgba(34,197,94,0.25)' : 'transparent'}`,
                 }}
               >
-                <input type="checkbox" checked={isSelected} onChange={() => onToggle(follower.did)} className="sr-only" />
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => !isProtected && onToggle(follower.did)}
+                  disabled={isProtected}
+                  className="sr-only"
+                />
                 {/* Avatar */}
                 {follower.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -99,8 +136,11 @@ export default function FollowerList({ followers, selected, onToggle, onSelectAl
                 )}
                 {/* Info */}
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                    {follower.displayName || follower.handle}
+                  <div className="flex items-center gap-1">
+                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                      {follower.displayName || follower.handle}
+                    </div>
+                    {isMutual && <Shield size={10} style={{ color: 'rgb(34,197,94)', flexShrink: 0 }} />}
                   </div>
                   <div className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
                     @{follower.handle}

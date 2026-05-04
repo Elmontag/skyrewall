@@ -44,8 +44,29 @@ export async function initDb(): Promise<void> {
       target_handle VARCHAR(255) NOT NULL,
       mode VARCHAR(10) NOT NULL CHECK (mode IN ('block', 'mute')),
       include_followers BOOLEAN DEFAULT true,
+      sub_type VARCHAR(20) NOT NULL DEFAULT 'follower',
       last_updated TIMESTAMP,
       created_at TIMESTAMP DEFAULT NOW()
     )
+  `);
+
+  // Migration: add sub_type column to existing deployments
+  await query(`
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sub_type VARCHAR(20) NOT NULL DEFAULT 'follower'
+  `).catch(() => {});
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS block_events (
+      id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      target_did TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('block', 'mute')),
+      source TEXT NOT NULL CHECK (source IN ('manual', 'subscription', 'reblock', 'interaction')),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS block_events_user_date ON block_events(user_id, created_at)
   `);
 }
