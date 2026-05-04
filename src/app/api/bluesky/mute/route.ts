@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
+import { getSessionCredentials, isValidDid } from '@/lib/session';
+
+const MAX_DIDS = 5000;
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { handle, password, dids } = body;
+    const { dids } = body;
 
-    if (!handle || !password || !Array.isArray(dids)) {
+    if (!Array.isArray(dids)) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+    if (dids.length > MAX_DIDS) {
+      return NextResponse.json({ error: `Too many DIDs (max ${MAX_DIDS})` }, { status: 400 });
+    }
+    if (!dids.every(isValidDid)) {
+      return NextResponse.json({ error: 'One or more DIDs are invalid' }, { status: 400 });
+    }
+
+    const sessionCreds = await getSessionCredentials();
+    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
+    const password: string | undefined = sessionCreds?.password ?? body.password;
+
+    if (!handle || !password) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -40,3 +57,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to mute accounts' }, { status: 500 });
   }
 }
+

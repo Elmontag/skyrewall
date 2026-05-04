@@ -26,10 +26,17 @@ export async function POST(req: NextRequest) {
     const rows = await query<UserRow>(
       `INSERT INTO users (handle, encrypted_password)
        VALUES ($1, $2)
-       ON CONFLICT (handle) DO UPDATE SET encrypted_password = EXCLUDED.encrypted_password
+       ON CONFLICT (handle) DO NOTHING
        RETURNING id, handle`,
       [handle, encryptedPassword]
     );
+
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { error: 'An account with this handle already exists. Please log in.' },
+        { status: 409 }
+      );
+    }
 
     const user = rows[0];
     const sessionData = signSession(JSON.stringify({ userId: user.id }));
@@ -46,6 +53,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid BlueSky credentials' }, { status: 401 });
     }
+    console.error('[register] error:', err);
     return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
   }
 }

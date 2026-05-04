@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
+import { getSessionCredentials } from '@/lib/session';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { handle, password, targetHandle, resolveOnly } = body;
+    const { targetHandle, resolveOnly } = body;
+
+    // Prefer session credentials; fall back to explicit body credentials for stateless use
+    const sessionCreds = await getSessionCredentials();
+    const handle: string | undefined = sessionCreds?.handle ?? body.handle;
+    const password: string | undefined = sessionCreds?.password ?? body.password;
 
     if (!handle || !password || !targetHandle) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -58,3 +64,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch followers' }, { status: 500 });
   }
 }
+

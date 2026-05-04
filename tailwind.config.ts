@@ -10,16 +10,21 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       colors: {
-        accent: '#00ff88',
-        'accent-dim': '#00cc6a',
-        'bg-dark': '#0a0e1a',
-        'bg-card': '#0f1628',
-        'bg-border': '#1a2540',
-        'text-primary': '#e2e8f0',
-        'text-secondary': '#8892a4',
+        accent: '#0085ff',
+        'accent-dim': '#0070d9',
+        'bg-dark': '#0e1620',
+        'bg-card': '#172030',
+        'bg-border': '#263347',
+        'text-primary': '#e6ecf0',
+        'text-secondary': '#7d92a5',
+      },
+      borderRadius: {
+        '2xl': '1rem',
+        '3xl': '1.5rem',
       },
     },
   },

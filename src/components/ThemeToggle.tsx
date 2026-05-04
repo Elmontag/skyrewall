@@ -1,7 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
+import type { Translations } from '@/i18n/en';
 
-export default function ThemeToggle() {
+interface Props {
+  t: Translations;
+}
+
+export default function ThemeToggle({ t }: Props) {
   const [dark, setDark] = useState(true);
 
   useEffect(() => {
@@ -29,14 +34,13 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="px-3 py-1 text-xs border rounded transition-colors"
-      style={{
-        borderColor: 'var(--bg-border)',
-        color: 'var(--text-secondary)',
-      }}
-      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+      style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
+      title={dark ? t.lightMode : t.darkMode}
     >
-      {dark ? '☀️ Light' : '🌙 Dark'}
+      {dark ? '☀️' : '🌙'}
+      <span className="hidden sm:inline">{dark ? t.lightMode : t.darkMode}</span>
     </button>
   );
 }
+

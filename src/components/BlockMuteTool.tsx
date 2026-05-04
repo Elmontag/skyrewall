@@ -1,10 +1,12 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
 
 interface Props {
+  mode: Mode;
   t: Translations;
 }
 
@@ -15,17 +17,40 @@ interface Result {
   failed: number;
 }
 
-export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = useState<Step>('credentials');
-  const [mode, setMode] = useState<Mode>('block');
+const STEPS: Step[] = ['credentials', 'target', 'followers'];
+const STEP_LABELS = (t: Translations) => [t.step1Title, t.step2Title, t.followerListTitle];
+
+export default function BlockMuteTool({ mode, t }: Props) {
+  const [step, setStep] = useState<Step>('credentials');
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');
+  const [prefilled, setPrefilled] = useState(false);
   const [targetHandle, setTargetHandle] = useState('');
   const [includeFollowers, setIncludeFollowers] = useState(true);
   const [followers, setFollowers] = useState<Follower[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
-  const [fetchProgress, setFetchProgress] = useState({ count: 0, page: 0, loading: false });
+  const [fetchProgress, setFetchProgress] = useState({ count: 0, loading: false });
   const [result, setResult] = useState<Result | null>(null);
+
+  // Detect active subscription session — use server-stored credentials instead of asking user
+  useEffect(() => {
+    fetch('/api/account', { method: 'GET' })
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          if (data.handle) {
+            setHandle(data.handle);
+            // Do NOT fetch or store the password — session cookie is used server-side
+            setPrefilled(true);
+            setStep('target');
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const stepIndex = STEPS.indexOf(step);
 
   const handleStep1 = () => {
     if (!handle.trim()) { setError(t.errorHandleRequired); return; }
@@ -37,240 +62,222 @@ export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = u
   const handleLoadFollowers = async () => {
     if (!targetHandle.trim()) { setError(t.errorTargetRequired); return; }
     setError('');
-    setFetchProgress({ count: 0, page: 0, loading: true });
+    setFetchProgress({ count: 0, loading: true });
     setStep('followers');
 
     if (!includeFollowers) {
       setFollowers([]);
       setSelected(new Set());
-      setFetchProgress({ count: 0, page: 0, loading: false });
+      setFetchProgress({ count: 0, loading: false });
       return;
     }
+
+    // When prefilled (session active), omit credentials — backend reads from session cookie
+    const credFields = prefilled ? {} : { handle, password };
 
     try {
       const res = await fetch('/api/bluesky/followers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, password, targetHandle }),
+        body: JSON.stringify({ ...credFields, targetHandle }),
       });
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error || t.errorGeneral);
         setStep('target');
-        setFetchProgress({ count: 0, page: 0, loading: false });
+        setFetchProgress({ count: 0, loading: false });
         return;
       }
 
       const data = await res.json();
-      const fetchedFollowers: Follower[] = data.followers;
-      setFollowers(fetchedFollowers);
-      setSelected(new Set(fetchedFollowers.map((f: Follower) => f.did)));
-      setFetchProgress({ count: fetchedFollowers.length, page: 0, loading: false });
+      const fetched: Follower[] = data.followers;
+      setFollowers(fetched);
+      setSelected(new Set(fetched.map((f) => f.did)));
+      setFetchProgress({ count: fetched.length, loading: false });
     } catch {
       setError(t.errorNetwork);
       setStep('target');
-      setFetchProgress({ count: 0, page: 0, loading: false });
+      setFetchProgress({ count: 0, loading: false });
     }
   };
 
   const handleToggle = useCallback((did: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(did)) next.delete(did);
-      else next.add(did);
+      if (next.has(did)) next.delete(did); else next.add(did);
       return next;
     });
   }, []);
 
-  const handleSelectAll = useCallback(() => {
-    setSelected(new Set(followers.map((f) => f.did)));
-  }, [followers]);
-
-  const handleDeselectAll = useCallback(() => {
-    setSelected(new Set());
-  }, []);
+  const handleSelectAll = useCallback(() => setSelected(new Set(followers.map((f) => f.did))), [followers]);
+  const handleDeselectAll = useCallback(() => setSelected(new Set()), []);
 
   const handleConfirm = async () => {
     setStep('processing');
-
     const dids: string[] = [...selected];
+
+    const credFields = prefilled ? {} : { handle, password };
 
     try {
       const resolveRes = await fetch('/api/bluesky/followers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, password, targetHandle, resolveOnly: true }),
+        body: JSON.stringify({ ...credFields, targetHandle, resolveOnly: true }),
       });
       if (resolveRes.ok) {
         const data = await resolveRes.json();
-        if (data.targetDid && !dids.includes(data.targetDid)) {
-          dids.unshift(data.targetDid);
-        }
+        if (data.targetDid && !dids.includes(data.targetDid)) dids.unshift(data.targetDid);
       }
-    } catch {
-      // proceed without target DID resolve
-    }
+    } catch { /* proceed */ }
 
     const endpoint = mode === 'block' ? '/api/bluesky/block' : '/api/bluesky/mute';
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, password, dids }),
+        body: JSON.stringify({ ...credFields, dids }),
       });
-
       const data = await res.json();
       setResult({ succeeded: data.succeeded || 0, failed: data.failed || 0 });
     } catch {
       setResult({ succeeded: 0, failed: dids.length });
     }
-
     setStep('done');
   };
 
   const reset = () => {
-    setStep('credentials');
-    setHandle('');
-    setPassword('');
     setTargetHandle('');
-    setFollowers([]);
-    setSelected(new Set());
-    setError('');
-    setResult(null);
-    setFetchProgress({ count: 0, page: 0, loading: false });
+    setFollowers([]); setSelected(new Set());
+    setError(''); setResult(null);
+    setFetchProgress({ count: 0, loading: false });
+    // If session credentials were prefilled, go back to target; otherwise back to credentials
+    if (prefilled) {
+      setStep('target');
+    } else {
+      setStep('credentials');
+      setHandle(''); setPassword('');
+    }
   };
 
-  // suppress unused warning
-  const cardStyle = {
+  const card = {
     backgroundColor: 'var(--bg-card)',
     border: '1px solid var(--bg-border)',
   };
 
-  const inputStyle = {
+  const input = {
     backgroundColor: 'var(--bg-dark)',
     border: '1px solid var(--bg-border)',
     color: 'var(--text-primary)',
-    fontFamily: 'inherit',
   };
 
-  const inputFocusStyle = {
-    outline: 'none',
-    borderColor: 'var(--accent)',
-  };
+  const isMute = mode === 'mute';
+  const modeColor = isMute ? '#a78bfa' : 'var(--accent)';
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto">
-      {/* Mode tabs */}
-      <div className="flex gap-0 rounded overflow-hidden" style={{ border: '1px solid var(--bg-border)' }}>
-        {(['block', 'mute'] as Mode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className="flex-1 py-2 text-sm font-medium transition-colors"
-            style={{
-              backgroundColor: mode === m ? 'var(--accent)' : 'var(--bg-card)',
-              color: mode === m ? '#000' : 'var(--text-secondary)',
-            }}
-          >
-            {m === 'block' ? t.blockTool : t.muteTool}
-          </button>
-        ))}
-      </div>
-
+    <div className="flex flex-col gap-5">
       {/* Step indicator */}
-      <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-        {['credentials', 'target', 'followers'].map((s, i) => (
-          <span key={s} className="flex items-center gap-2">
-            <span
-              className="w-5 h-5 rounded-full flex items-center justify-center text-xs"
-              style={{
-                backgroundColor:
-                  step === s ? 'var(--accent)' : 'var(--bg-border)',
-                color: step === s ? '#000' : 'var(--text-secondary)',
-              }}
-            >
-              {i + 1}
-            </span>
-            {i < 2 && <span style={{ color: 'var(--bg-border)' }}>—</span>}
-          </span>
-        ))}
-      </div>
+      {step !== 'done' && step !== 'processing' && (
+        <div className="flex items-center gap-0">
+          {STEP_LABELS(t).map((label, i) => {
+            const active = stepIndex === i;
+            const done = stepIndex > i;
+            return (
+              <div key={i} className="flex items-center flex-1 last:flex-none">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-all"
+                    style={{
+                      backgroundColor: done ? 'var(--success)' : active ? 'var(--accent)' : 'var(--bg-border)',
+                      color: done || active ? '#fff' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {done ? <Check size={12} strokeWidth={3} /> : i + 1}
+                  </div>
+                  <span className="text-xs hidden sm:block" style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                    {label}
+                  </span>
+                </div>
+                {i < 2 && <div className="flex-1 h-px mx-3" style={{ backgroundColor: done ? 'var(--success)' : 'var(--bg-border)' }} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
+      {/* Error */}
       {error && (
-        <div className="p-3 rounded text-sm" style={{ backgroundColor: 'rgba(255,80,80,0.1)', border: '1px solid rgba(255,80,80,0.3)', color: '#ff5050' }}>
-          {error}
+        <div
+          className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+          style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}
+        >
+          <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {error}
         </div>
       )}
 
       {/* Step 1: Credentials */}
       {step === 'credentials' && (
-        <div className="p-6 rounded-lg flex flex-col gap-4" style={cardStyle}>
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <div>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
-              &gt; {t.step1Title}
-            </h2>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{t.step1Desc}</p>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.step1Title}</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{t.step1Desc}</p>
           </div>
           <div className="flex flex-col gap-3">
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
               <input
                 type="text"
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 placeholder={t.handlePlaceholder}
-                className="w-full px-3 py-2 rounded text-sm"
-                style={inputStyle}
-                onFocus={(e) => Object.assign(e.target.style, inputFocusStyle)}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--bg-border)')}
+                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+                style={input}
                 onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
               />
             </div>
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t.appPasswordPlaceholder}
-                className="w-full px-3 py-2 rounded text-sm"
-                style={inputStyle}
-                onFocus={(e) => Object.assign(e.target.style, inputFocusStyle)}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--bg-border)')}
+                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+                style={input}
                 onKeyDown={(e) => e.key === 'Enter' && handleStep1()}
               />
             </div>
           </div>
           <button
             onClick={handleStep1}
-            className="px-4 py-2 rounded text-sm font-semibold transition-all"
-            style={{ backgroundColor: 'var(--accent)', color: '#000' }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
           >
-            {t.next}
+            {t.next} <ArrowRight size={15} />
           </button>
         </div>
       )}
 
       {/* Step 2: Target */}
       {step === 'target' && (
-        <div className="p-6 rounded-lg flex flex-col gap-4" style={cardStyle}>
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.step2Title}</h2>
+          {prefilled && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+              style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid rgba(0,133,255,0.2)', color: 'var(--accent)' }}>
+              <Info size={13} className="flex-shrink-0" />
+              <span>{t.usingSubscriptionAccount} <span className="font-mono font-semibold">@{handle}</span></span>
+            </div>
+          )}
           <div>
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
-              &gt; {t.step2Title}
-            </h2>
-          </div>
-          <div>
-            <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
             <input
               type="text"
               value={targetHandle}
               onChange={(e) => setTargetHandle(e.target.value)}
               placeholder={t.targetHandlePlaceholder}
-              className="w-full px-3 py-2 rounded text-sm"
-              style={inputStyle}
-              onFocus={(e) => Object.assign(e.target.style, inputFocusStyle)}
-              onBlur={(e) => (e.target.style.borderColor = 'var(--bg-border)')}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+              style={input}
               onKeyDown={(e) => e.key === 'Enter' && handleLoadFollowers()}
             />
           </div>
@@ -279,33 +286,39 @@ export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = u
               { value: true, label: t.includeFollowers },
               { value: false, label: t.withoutFollowers },
             ].map(({ value, label }) => (
-              <label key={String(value)} className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-primary)' }}>
+              <label
+                key={String(value)}
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+                style={{
+                  backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                  border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
+                }}
+                onClick={() => setIncludeFollowers(value)}
+              >
                 <div
-                  className="w-4 h-4 rounded-full border flex items-center justify-center"
-                  style={{
-                    borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)',
-                    backgroundColor: includeFollowers === value ? 'var(--accent)' : 'transparent',
-                  }}
-                  onClick={() => setIncludeFollowers(value)}
+                  className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                  style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
                 >
-                  {includeFollowers === value && <div className="w-2 h-2 rounded-full bg-black" />}
+                  {includeFollowers === value && (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                  )}
                 </div>
-                {label}
+                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
               </label>
             ))}
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => setStep('credentials')}
-              className="px-4 py-2 rounded text-sm transition-colors"
+              className="px-4 py-2.5 rounded-xl text-sm transition-colors"
               style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
             >
               {t.back}
             </button>
             <button
               onClick={handleLoadFollowers}
-              className="flex-1 px-4 py-2 rounded text-sm font-semibold transition-all"
-              style={{ backgroundColor: 'var(--accent)', color: '#000' }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
+              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
             >
               {includeFollowers ? t.loadFollowers : t.next}
             </button>
@@ -315,50 +328,40 @@ export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = u
 
       {/* Step 3: Followers */}
       {step === 'followers' && (
-        <div className="p-6 rounded-lg flex flex-col gap-4" style={cardStyle}>
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>
-            &gt; {t.followerListTitle}
-          </h2>
+        <div className="rounded-2xl p-6 flex flex-col gap-4" style={card}>
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.followerListTitle}</h2>
 
           {fetchProgress.loading ? (
-            <div className="flex flex-col gap-3">
-              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <div className="flex flex-col gap-3 py-4">
+              <p className="text-sm pulse" style={{ color: 'var(--text-secondary)' }}>
                 {t.fetchingFollowers} ({fetchProgress.count} {t.followers})
-              </div>
-              <div className="w-full h-1 rounded overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+              </p>
+              <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
                 <div className="h-full progress-bar" style={{ width: '100%' }} />
               </div>
             </div>
           ) : (
             <>
-              {followers.length === 0 ? (
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.noFollowers}</p>
-              ) : (
-                <FollowerList
-                  followers={followers}
-                  selected={selected}
-                  onToggle={handleToggle}
-                  onSelectAll={handleSelectAll}
-                  onDeselectAll={handleDeselectAll}
-                  t={t}
-                />
-              )}
-              <div className="flex gap-3 mt-2">
+              {followers.length === 0
+                ? <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>{t.noFollowers}</p>
+                : <FollowerList followers={followers} selected={selected} onToggle={handleToggle} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} t={t} />
+              }
+              <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setStep('target')}
-                  className="px-4 py-2 rounded text-sm transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2"
                   style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
                 >
-                  {t.back}
+                  <ArrowLeft size={14} /> {t.back}
                 </button>
                 <button
                   onClick={handleConfirm}
-                  className="flex-1 px-4 py-2 rounded text-sm font-semibold transition-all"
-                  style={{ backgroundColor: 'var(--accent)', color: '#000' }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
+                  style={{ backgroundColor: modeColor, color: '#fff' }}
                   disabled={selected.size === 0 && includeFollowers}
                 >
                   {mode === 'block' ? t.confirmBlock : t.confirmMute}
-                  {selected.size > 0 && ` (${selected.size + 1})`}
+                  {selected.size > 0 && <span className="ml-1.5 opacity-80">({selected.size + 1})</span>}
                 </button>
               </div>
             </>
@@ -368,43 +371,49 @@ export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = u
 
       {/* Processing */}
       {step === 'processing' && (
-        <div className="p-6 rounded-lg flex flex-col gap-4 items-center" style={cardStyle}>
-          <div className="text-lg font-semibold cursor" style={{ color: 'var(--accent)' }}>
-            {t.processing}
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-8 flex flex-col gap-4 items-center" style={card}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
+            {isMute
+              ? <VolumeX size={26} strokeWidth={1.5} className="pulse" />
+              : <ShieldX size={26} strokeWidth={1.5} className="pulse" />}
           </div>
-          <div className="w-full h-2 rounded overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t.processing}</p>
+          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
             <div className="h-full progress-bar" style={{ width: '100%' }} />
           </div>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {mode === 'block' ? t.confirmBlock : t.confirmMute}...
-          </p>
         </div>
       )}
 
       {/* Done */}
       {step === 'done' && result && (
-        <div className="p-6 rounded-lg flex flex-col gap-4" style={cardStyle}>
-          <h2 className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>
-            ✓ {t.success}
-          </h2>
-          <div className="flex flex-col gap-2 text-sm">
-            <div>
-              <span style={{ color: 'var(--accent)' }}>{result.succeeded}</span>{' '}
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {mode === 'block' ? t.blocked : t.muted}
-              </span>
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: 'var(--success)' }}>
+              <CheckCircle2 size={22} strokeWidth={2} />
+            </div>
+            <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t.success}</h2>
+          </div>
+          <div
+            className="rounded-xl p-4 flex flex-col gap-2"
+            style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}
+          >
+            <div className="flex items-center justify-between text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>{mode === 'block' ? t.blocked : t.muted}</span>
+              <span className="font-semibold" style={{ color: 'var(--success)' }}>{result.succeeded}</span>
             </div>
             {result.failed > 0 && (
-              <div>
-                <span style={{ color: '#ff5050' }}>{result.failed}</span>{' '}
+              <div className="flex items-center justify-between text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>{t.failed}</span>
+                <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
               </div>
             )}
           </div>
           <button
             onClick={reset}
-            className="px-4 py-2 rounded text-sm font-semibold"
-            style={{ backgroundColor: 'var(--accent)', color: '#000' }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
           >
             {t.startOver}
           </button>
@@ -412,4 +421,4 @@ export default function BlockMuteTool({ t }: Props) {  const [step, setStep] = u
       )}
     </div>
   );
-}
+}
