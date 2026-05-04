@@ -55,9 +55,33 @@ export async function POST(req: NextRequest) {
     await agent.login({ identifier: handle, password });
 
     const atUri = await resolvePostUri(agent, postUrl.trim());
-    const actors = await fetchPostInteractors(agent, atUri, resolvedTypes, MAX_RESULTS);
 
-    return NextResponse.json({ actors, atUri });
+    const encode = (data: object) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const interactors = await fetchPostInteractors(agent, atUri, resolvedTypes, MAX_RESULTS, (count) => {
+            controller.enqueue(encode({ count }));
+          });
+          controller.enqueue(encode({ interactors, complete: true }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          controller.enqueue(encode({ error: message }));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (message.includes('Authentication') || message.includes('Invalid')) {

@@ -91,6 +91,7 @@ const en = {
   noFollowers: 'No followers found.',
   fetchingFollowers: 'Fetching followers...',
   fetchingPage: 'Fetching page',
+  fetchingCount: '{count} found so far...',
 
   // Results
   success: 'Done!',

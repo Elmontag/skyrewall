@@ -28,9 +28,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ targetDid });
     }
 
-    const followers = await fetchAllFollowers(agent, targetHandle);
+    // SSE stream — emits { count } after each page, then { followers, targetDid, complete }
+    const encode = (data: object) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
 
-    return NextResponse.json({ followers, targetDid });
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const followers = await fetchAllFollowers(agent, targetHandle, (count) => {
+            controller.enqueue(encode({ count }));
+          });
+          controller.enqueue(encode({ followers, targetDid, complete: true }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          controller.enqueue(encode({ error: message }));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (message.includes('Authentication') || message.includes('Invalid')) {

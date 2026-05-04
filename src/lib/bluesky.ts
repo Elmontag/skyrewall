@@ -219,7 +219,8 @@ export async function importExistingActions(
  */
 export async function fetchBlockedByFromClearSky(
   handle: string,
-  maxResults = 5000
+  maxResults = 5000,
+  onProgress?: (count: number) => void
 ): Promise<string[]> {
   const dids: string[] = [];
   let page = 1;
@@ -242,6 +243,8 @@ export async function fetchBlockedByFromClearSky(
       if (dids.length >= maxResults) break;
       if (typeof item.did === 'string') dids.push(item.did);
     }
+
+    if (onProgress) onProgress(dids.length);
 
     if (batch.length < 100) break; // last page
     page++;
@@ -330,7 +333,8 @@ export async function fetchPostInteractors(
   agent: BskyAgent,
   atUri: string,
   types: ('likes' | 'reposts' | 'quotes')[],
-  maxResults = 5000
+  maxResults = 5000,
+  onProgress?: (count: number) => void
 ): Promise<Follower[]> {
   const seen = new Map<string, Follower>();
 
@@ -343,6 +347,7 @@ export async function fetchPostInteractors(
         avatar: a.avatar,
         description: a.description,
       });
+      if (onProgress) onProgress(seen.size);
     }
   };
 

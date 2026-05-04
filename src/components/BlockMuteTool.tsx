@@ -89,17 +89,48 @@ export default function BlockMuteTool({ mode, t }: Props) {
         body: JSON.stringify({ ...credFields, targetHandle }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || t.errorGeneral);
+      if (!res.body) {
+        setError(t.errorGeneral);
         setStep('target');
         setFetchProgress({ count: 0, loading: false });
         return;
       }
 
-      const data = await res.json();
-      const fetched: Follower[] = data.followers;
-      setTargetDid(data.targetDid ?? '');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fetched: import('@/types').Follower[] = [];
+      let resolvedTargetDid = '';
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.error) {
+              setError(event.error);
+              setStep('target');
+              setFetchProgress({ count: 0, loading: false });
+              return;
+            }
+            if (typeof event.count === 'number') {
+              setFetchProgress({ count: event.count, loading: true });
+            }
+            if (event.complete) {
+              fetched = event.followers ?? [];
+              resolvedTargetDid = event.targetDid ?? '';
+              break outer;
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
+      setTargetDid(resolvedTargetDid);
       setFollowers(fetched);
 
       // Check mutuals + actioned if session is active

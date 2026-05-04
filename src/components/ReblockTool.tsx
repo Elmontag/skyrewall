@@ -31,6 +31,8 @@ export default function ReblockTool({ t }: Props) {
   const [hideActioned, setHideActioned] = useState(true);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
 
+  const [fetchCount, setFetchCount] = useState(0);
+
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
       .then(async (r) => {
@@ -51,6 +53,7 @@ export default function ReblockTool({ t }: Props) {
       setError(t.errorHandleRequired); return;
     }
     setError('');
+    setFetchCount(0);
     setStep('loading');
 
     const credFields = prefilled ? {} : { handle, password };
@@ -61,14 +64,41 @@ export default function ReblockTool({ t }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credFields),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || t.errorGeneral);
+      if (!res.body) {
+        setError(t.errorGeneral);
         setStep(prefilled ? 'ready' : 'credentials');
         return;
       }
-      const data = await res.json();
-      const fetched: Follower[] = data.blockers ?? [];
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fetched: import('@/types').Follower[] = [];
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.error) {
+              setError(event.error);
+              setStep(prefilled ? 'ready' : 'credentials');
+              return;
+            }
+            if (typeof event.count === 'number') setFetchCount(event.count);
+            if (event.complete) {
+              fetched = event.blockers ?? [];
+              break outer;
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
       setBlockers(fetched);
       setSelected(new Set(fetched.map((f) => f.did)));
 
@@ -292,6 +322,14 @@ export default function ReblockTool({ t }: Props) {
             <RefreshCw size={26} strokeWidth={1.5} className="pulse animate-spin" />
           </div>
           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t.reblockScanning}</p>
+          {fetchCount > 0 && (
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {t.fetchingCount.replace('{count}', String(fetchCount))}
+            </p>
+          )}
+          <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
+            <div className="h-full progress-bar" style={{ width: '100%' }} />
+          </div>
         </div>
       )}
 

@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, enrichProfileBatch, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
+import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
 
 interface SyncRow {
   sub_id: string;
@@ -112,9 +112,6 @@ async function syncAllSubscriptions(): Promise<void> {
 
       if (row.sub_type === 'reblock') {
         dids = await fetchBlockedByFromClearSky(row.handle);
-        if (dids.length > 0) {
-          await enrichProfileBatch(agent, dids.slice(0, 5));
-        }
       } else if (row.sub_type === 'postinteraction') {
         const config = (row.config ?? {}) as { types?: string[] };
         const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
@@ -162,6 +159,9 @@ async function syncAllSubscriptions(): Promise<void> {
     } catch (err) {
       console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, err instanceof Error ? err.message : err);
     }
+
+    // Small inter-subscription pause to avoid burst rate-limit when a user has many subscriptions
+    await new Promise((r) => setTimeout(r, 1500));
   }
 }
 

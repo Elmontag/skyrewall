@@ -17,24 +17,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Handle is required' }, { status: 400 });
     }
 
-    // Fetch who blocks this user from ClearSky (server-side, no credentials sent to ClearSky)
-    const blockerDids = await fetchBlockedByFromClearSky(handle, MAX_RESULTS);
+    const encode = (data: object) =>
+      new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
 
-    if (blockerDids.length === 0) {
-      return NextResponse.json({ blockers: [] });
-    }
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Fetch who blocks this user from ClearSky (no credentials sent to ClearSky)
+          const blockerDids = await fetchBlockedByFromClearSky(handle, MAX_RESULTS, (count) => {
+            controller.enqueue(encode({ count }));
+          });
 
-    // Enrich with profile data if credentials are available
-    let blockers;
-    if (handle && password) {
-      const agent = new BskyAgent({ service: 'https://bsky.social' });
-      await agent.login({ identifier: handle, password });
-      blockers = await enrichProfileBatch(agent, blockerDids);
-    } else {
-      blockers = blockerDids.map((did) => ({ did, handle: did }));
-    }
+          if (blockerDids.length === 0) {
+            controller.enqueue(encode({ blockers: [], complete: true }));
+            return;
+          }
 
-    return NextResponse.json({ blockers });
+          // Enrich with profile data if credentials are available
+          let blockers;
+          if (password) {
+            const agent = new BskyAgent({ service: 'https://bsky.social' });
+            await agent.login({ identifier: handle, password });
+            blockers = await enrichProfileBatch(agent, blockerDids);
+          } else {
+            blockers = blockerDids.map((did) => ({ did, handle: did }));
+          }
+
+          controller.enqueue(encode({ blockers, complete: true }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          controller.enqueue(encode({ error: message }));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     if (message.includes('Authentication') || message.includes('Invalid')) {

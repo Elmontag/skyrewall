@@ -93,6 +93,7 @@ const de: Translations = {
   noFollowers: 'Keine Follower gefunden.',
   fetchingFollowers: 'Follower werden geladen...',
   fetchingPage: 'Seite wird geladen',
+  fetchingCount: '{count} bisher gefunden...',
 
   // Results
   success: 'Fertig!',
