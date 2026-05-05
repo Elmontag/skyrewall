@@ -24,7 +24,9 @@ export async function POST(req: NextRequest) {
     const handle: string | undefined = body.handle?.trim() || undefined;
 
     const client = getOAuthClient();
-    const url = await client.authorize(handle ?? '', {
+    // If no handle is given, default to bsky.social so the OAuth library can
+    // discover the PDS. Users on other servers must supply their handle.
+    const url = await client.authorize(handle || 'bsky.social', {
       scope: 'atproto transition:generic',
     });
 

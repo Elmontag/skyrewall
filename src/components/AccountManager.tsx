@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut, LogIn } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
@@ -55,7 +55,6 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
   const [authLoading, setAuthLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [oauthHandle, setOauthHandle] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
 
   const handleField = useUpdateField('handle');
@@ -166,7 +165,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       const res = await fetch('/api/auth/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: oauthHandle.trim() || undefined }),
+        body: JSON.stringify({ handle: loginHandle.trim() || undefined }),
       });
       if (res.ok) {
         const { redirectUrl } = await res.json();
@@ -229,29 +228,21 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
           </div>
         )}
 
-        {/* AT Protocol OAuth — only shown on login, not register */}
+        {/* Handle — single field shared for both app-password and OAuth */}
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
+          <input
+            type="text" value={loginHandle} onChange={(e) => setLoginHandle(e.target.value)}
+            placeholder={t.handlePlaceholder}
+            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+            style={inputStyle}
+          />
+        </div>
+
+        {/* AT Protocol OAuth — login only */}
         {!isRegister && (
-          <div className="flex flex-col gap-3 p-4 rounded-xl" style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}>
-            <div className="flex items-start gap-2">
-              <LogIn size={15} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
-              <div>
-                <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t.loginWithBluesky}</div>
-                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.oauthLoginDesc}</div>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{t.oauthHandleOptional}</label>
-              <input
-                type="text"
-                value={oauthHandle}
-                onChange={(e) => setOauthHandle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleOAuthLogin()}
-                placeholder={t.oauthHandleOptionalPlaceholder}
-                className="w-full px-3 py-2 rounded-lg text-sm font-mono focus-ring transition-all"
-                style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)', color: 'var(--text-primary)' }}
-              />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{t.oauthHandleHint}</p>
-            </div>
+          <>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.oauthHandleHint}</p>
             <button
               onClick={handleOAuthLogin}
               disabled={oauthLoading}
@@ -263,39 +254,26 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
                 : <><LogIn size={14} /> {t.loginWithBluesky}</>
               }
             </button>
-          </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.orDivider}</span>
+              <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+            </div>
+          </>
         )}
 
-        {/* Divider */}
-        {!isRegister && (
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.orDivider}</span>
-            <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
-            <input
-              type="text" value={loginHandle} onChange={(e) => setLoginHandle(e.target.value)}
-              placeholder={t.handlePlaceholder}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
-            <input
-              type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (isRegister ? handleRegister() : handleLogin())}
-              placeholder={t.appPasswordPlaceholder}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={inputStyle}
-            />
-          </div>
+        {/* App-password */}
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
+          <input
+            type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (isRegister ? handleRegister() : handleLogin())}
+            placeholder={t.appPasswordPlaceholder}
+            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+            style={inputStyle}
+          />
         </div>
+
         {isRegister && (
           <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl transition-all"
             style={{ backgroundColor: privacyAccepted ? 'var(--accent-muted)' : 'var(--bg-dark)', border: `1px solid ${privacyAccepted ? 'var(--accent)' : 'var(--bg-border)'}` }}>
