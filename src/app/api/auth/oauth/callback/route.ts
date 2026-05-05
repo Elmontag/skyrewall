@@ -120,7 +120,11 @@ export async function GET(req: NextRequest) {
     response.cookies.delete('oauth_reg_consent');
     return response;
   } catch (err) {
-    console.error('[oauth/callback] error:', sanitizeError(err));
+    const sanitized = sanitizeError(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[oauth/callback] error:', sanitized, stack ? `\n${stack}` : '');
+    console.error('[oauth/callback] appUrl:', appUrl || '(empty — NEXT_PUBLIC_APP_URL not set)');
+    console.error('[oauth/callback] params:', Object.fromEntries(params.entries()));
     const errorUrl = `${appUrl}/?tab=account&oauth_error=1`;
     return NextResponse.redirect(errorUrl);
   }
