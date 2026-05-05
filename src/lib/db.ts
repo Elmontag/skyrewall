@@ -165,4 +165,14 @@ export async function initDb(): Promise<void> {
   await query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_error_since TIMESTAMPTZ
   `).catch(() => {});
+
+  // Cache for Bluesky list members — populated only by the subscription sync worker.
+  // Stateless API endpoints never write here (privacy guarantee).
+  await query(`
+    CREATE TABLE IF NOT EXISTS list_cache (
+      list_uri TEXT PRIMARY KEY,
+      member_dids TEXT[] NOT NULL,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }

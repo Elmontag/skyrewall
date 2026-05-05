@@ -248,6 +248,26 @@ const de: Translations = {
   darkMode: 'Dunkel',
   lightMode: 'Hell',
   language: 'Sprache',
+
+  // Listen-Feature
+  listSource: 'Quelle',
+  listSourceFollowers: 'Follower eines Accounts',
+  listSourceList: 'Mitglieder einer Liste',
+  listPickerTitle: 'Liste auswählen',
+  listPickerMyLists: 'Meine Listen',
+  listPickerModLists: 'Moderationslisten',
+  listPickerEnterUrl: 'URL eingeben',
+  listPickerLoading: 'Listen werden geladen…',
+  listPickerEmpty: 'Keine Listen gefunden.',
+  listPickerUrlPlaceholder: 'at://did:.../app.bsky.graph.list/...',
+  listPickerUrlInvalid: 'Bitte eine gültige at://-Listen-URI eingeben.',
+  listPickerMembers: 'Mitglieder',
+  listExcludeToggle: 'Listenmitglieder ausschließen',
+  listExcludeHint: 'Accounts in dieser Liste werden aus der Auswahl entfernt (Whitelist).',
+  listExcludeLabel: 'Ausschluss-Liste',
+  listUri: 'Listen-URI',
+  subTypeList: 'Liste',
+  subListUri: 'Listen-URI',
 };
 
 export default de;

@@ -1,3 +1,12 @@
+export interface BlueskyList {
+  uri: string;
+  name: string;
+  purpose: string;
+  itemCount: number;
+  avatar?: string;
+  description?: string;
+}
+
 export interface Follower {
   did: string;
   handle: string;
@@ -16,7 +25,7 @@ export interface Subscription {
   id: string;
   target_handle: string;
   mode: 'block' | 'mute';
-  sub_type: 'follower' | 'reblock' | 'postinteraction';
+  sub_type: 'follower' | 'reblock' | 'postinteraction' | 'list';
   include_followers: boolean;
   config: Record<string, unknown>;
   last_updated: string | null;

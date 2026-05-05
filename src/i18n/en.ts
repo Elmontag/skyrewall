@@ -246,6 +246,26 @@ const en = {
   darkMode: 'Dark',
   lightMode: 'Light',
   language: 'Language',
+
+  // Lists feature
+  listSource: 'Source',
+  listSourceFollowers: 'Followers of an account',
+  listSourceList: 'Members of a list',
+  listPickerTitle: 'Select a list',
+  listPickerMyLists: 'My Lists',
+  listPickerModLists: 'Moderation Lists',
+  listPickerEnterUrl: 'Enter URL',
+  listPickerLoading: 'Loading your lists…',
+  listPickerEmpty: 'No lists found.',
+  listPickerUrlPlaceholder: 'at://did:.../app.bsky.graph.list/...',
+  listPickerUrlInvalid: 'Please enter a valid at:// list URI.',
+  listPickerMembers: 'members',
+  listExcludeToggle: 'Exclude members of a list',
+  listExcludeHint: 'Accounts in this list will be removed from the selection (whitelist).',
+  listExcludeLabel: 'Exclusion list',
+  listUri: 'List URI',
+  subTypeList: 'List',
+  subListUri: 'List URI',
 };
 
 export default en;

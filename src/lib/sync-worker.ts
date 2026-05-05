@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
+import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError } from '@/lib/request-security';
 
@@ -77,6 +77,58 @@ async function syncAllSubscriptions(): Promise<void> {
   // Track which users have already had their cold-start import done this run
   const importedUsers = new Set<string>();
 
+  // In-run cache: avoids redundant DB lookups for list URIs already fetched this run.
+  // The persistent list_cache table (with TTL) handles cross-run deduplication.
+  const inRunListCache = new Map<string, string[]>();
+
+  const intervalMinutes = Math.max(1, parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '60', 10));
+
+  /**
+   * Returns list member DIDs for the given AT URI.
+   * Checks in-run cache first, then DB list_cache (TTL = SYNC_INTERVAL_MINUTES),
+   * and fetches from Bluesky only when the cache is stale or missing.
+   * Only called from the sync worker — never from stateless endpoints.
+   */
+  async function getListMembersCached(
+    listUri: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    agent: any
+  ): Promise<string[]> {
+    if (inRunListCache.has(listUri)) {
+      return inRunListCache.get(listUri)!;
+    }
+
+    // Check DB cache
+    const cacheRows = await query<{ member_dids: string[]; fetched_at: string }>(
+      `SELECT member_dids, fetched_at FROM list_cache WHERE list_uri = $1`,
+      [listUri]
+    ).catch(() => []);
+
+    if (cacheRows.length > 0) {
+      const ageMinutes = (Date.now() - new Date(cacheRows[0].fetched_at).getTime()) / 60_000;
+      if (ageMinutes < intervalMinutes) {
+        const dids = cacheRows[0].member_dids;
+        inRunListCache.set(listUri, dids);
+        return dids;
+      }
+    }
+
+    // Cache miss or stale — fetch from Bluesky
+    const members = await fetchListMembers(agent, listUri);
+    const dids = members.map((m) => m.did);
+
+    // Upsert into DB cache
+    await query(
+      `INSERT INTO list_cache (list_uri, member_dids, fetched_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (list_uri) DO UPDATE SET member_dids = $2, fetched_at = NOW()`,
+      [listUri, dids]
+    ).catch(() => {});
+
+    inRunListCache.set(listUri, dids);
+    return dids;
+  }
+
   for (const row of rows) {
     try {
       // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
@@ -142,12 +194,34 @@ async function syncAllSubscriptions(): Promise<void> {
         const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
         const interactors = await fetchPostInteractors(agent, row.target_handle, types);
         dids = interactors.map((f) => f.did);
+      } else if (row.sub_type === 'list') {
+        const config = (row.config ?? {}) as { list_uri?: string };
+        if (!config.list_uri) {
+          console.warn(`[sync] ✗ subscription ${row.sub_id}: sub_type=list but config.list_uri is missing — skipping`);
+          continue;
+        }
+        dids = await getListMembersCached(config.list_uri, agent);
       } else if (row.include_followers) {
         const followers = await fetchAllFollowers(agent, row.target_handle);
         dids = followers.map((f) => f.did);
       } else {
         const profile = await agent.getProfile({ actor: row.target_handle });
         dids = [profile.data.did];
+      }
+
+      // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
+      const excludeListUri = (row.config as Record<string, unknown> | null)?.exclude_list_uri;
+      if (typeof excludeListUri === 'string' && excludeListUri.startsWith('at://') && dids.length > 0) {
+        const excludeDids = await getListMembersCached(excludeListUri, agent);
+        if (excludeDids.length > 0) {
+          const excludeSet = new Set(excludeDids);
+          const before = dids.length;
+          dids = dids.filter((d) => !excludeSet.has(d));
+          const excluded = before - dids.length;
+          if (excluded > 0) {
+            console.log(`[sync] subscription ${row.sub_id}: excluded ${excluded} DID(s) via exclude_list_uri`);
+          }
+        }
       }
 
       if (dids.length > 0) {

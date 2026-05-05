@@ -72,3 +72,11 @@ export function sanitizeError(err: unknown): string {
     .replace(/handle\s*[:=]\s*[^,\s}]+/gi, 'handle=***');
 }
 
+/**
+ * Validates an AT Protocol URI.
+ * Valid format: at://did:<method>:<id>/<collection>[/<rkey>]
+ */
+export function isValidAtUri(uri: string): boolean {
+  return /^at:\/\/did:[a-z]+:[a-zA-Z0-9._%-]{1,512}\/[a-zA-Z0-9.]{1,128}(\/[a-zA-Z0-9._~-]{1,512})?$/.test(uri);
+}
+

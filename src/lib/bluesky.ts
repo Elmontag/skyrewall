@@ -23,13 +23,14 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const status = (err as any)?.status ?? (err as any)?.response?.status;
       if (status !== 429 && status !== 503) throw err;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      /* eslint-disable @typescript-eslint/no-explicit-any */
       const retryAfterRaw =
         (err as any)?.response?.headers?.get?.('retry-after') ??
         (err as any)?.response?.headers?.get?.('Retry-After') ??
         (err as any)?.headers?.get?.('retry-after') ??
         (err as any)?.headers?.get?.('Retry-After') ??
         (err as any)?.headers?.['retry-after'];
+      /* eslint-enable @typescript-eslint/no-explicit-any */
       let waitMs: number;
       if (retryAfterRaw) {
         const secs = parseInt(retryAfterRaw as string, 10);
@@ -453,5 +454,87 @@ export async function fetchPostInteractors(
   }
 
   return Array.from(seen.values()).slice(0, maxResults);
+}
+
+/**
+ * Fetches all members of an AT Protocol list (app.bsky.graph.list).
+ * Works with both curation lists and moderation lists.
+ * Returns a deduplicated list of Followers, capped at maxResults.
+ */
+export async function fetchListMembers(
+  agent: BskyAgent,
+  listUri: string,
+  maxResults = 5000,
+  onProgress?: (count: number) => void
+): Promise<Follower[]> {
+  const members: Follower[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const res = await withRetry(() =>
+      agent.app.bsky.graph.getList({ list: listUri, limit: 100, cursor })
+    );
+    for (const item of res.data.items) {
+      if (members.length >= maxResults) break;
+      members.push({
+        did: item.subject.did,
+        handle: item.subject.handle,
+        displayName: item.subject.displayName,
+        avatar: item.subject.avatar,
+        description: item.subject.description,
+      });
+    }
+    cursor = res.data.cursor;
+    if (onProgress) onProgress(members.length);
+    if (cursor && members.length < maxResults) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  } while (cursor && members.length < maxResults);
+
+  return members;
+}
+
+export interface BlueskyList {
+  uri: string;
+  name: string;
+  purpose: string;
+  itemCount: number;
+  avatar?: string;
+  description?: string;
+}
+
+/**
+ * Fetches all lists created by the authenticated user (or a given actor).
+ * Returns both curation lists and moderation lists.
+ */
+export async function fetchUserLists(
+  agent: BskyAgent,
+  actor?: string
+): Promise<BlueskyList[]> {
+  const actorId = actor ?? agent.session?.did;
+  if (!actorId) throw new Error('No actor DID available');
+
+  const lists: BlueskyList[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const res = await withRetry(() =>
+      agent.app.bsky.graph.getLists({ actor: actorId, limit: 100, cursor })
+    );
+    for (const list of res.data.lists) {
+      lists.push({
+        uri: list.uri,
+        name: list.name,
+        purpose: list.purpose,
+        itemCount: list.listItemCount ?? 0,
+        avatar: list.avatar,
+        description: list.description,
+      });
+    }
+    cursor = res.data.cursor;
+    if (cursor) await new Promise((r) => setTimeout(r, 200));
+  } while (cursor);
+
+  return lists;
 }
 

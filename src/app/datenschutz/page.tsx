@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { marked } from 'marked';
@@ -14,7 +15,7 @@ export default async function DatenschutzPage() {
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-8">
       <div className="max-w-2xl mx-auto">
-        <a href="/" className="text-sky-400 hover:underline text-sm mb-6 inline-block">← Zurück</a>
+        <Link href="/" className="text-sky-400 hover:underline text-sm mb-6 inline-block">← Zurück</Link>
         <article
           className="prose prose-invert prose-sky max-w-none"
           dangerouslySetInnerHTML={{ __html: html }}

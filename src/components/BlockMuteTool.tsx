@@ -1,9 +1,10 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info, Bell } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info, Bell, List, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
+import ListPicker from './ListPicker';
 
 interface Props {
   mode: Mode;
@@ -42,6 +43,12 @@ export default function BlockMuteTool({ mode, t }: Props) {
 
   const [inlineSubSaved, setInlineSubSaved] = useState(false);
   const [inlineSubSaving, setInlineSubSaving] = useState(false);
+
+  // List source state
+  const [source, setSource] = useState<'followers' | 'list'>('followers');
+  const [listUri, setListUri] = useState('');
+  const [excludeListUri, setExcludeListUri] = useState('');
+  const [showExclude, setShowExclude] = useState(false);
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
       .then(async (r) => {
@@ -68,12 +75,13 @@ export default function BlockMuteTool({ mode, t }: Props) {
   };
 
   const handleLoadFollowers = async () => {
-    if (!targetHandle.trim()) { setError(t.errorTargetRequired); return; }
+    if (source === 'followers' && !targetHandle.trim()) { setError(t.errorTargetRequired); return; }
+    if (source === 'list' && !listUri.trim()) { setError(t.listPickerUrlInvalid); return; }
     setError('');
     setFetchProgress({ count: 0, loading: true });
     setStep('followers');
 
-    if (!includeFollowers) {
+    if (source === 'followers' && !includeFollowers) {
       setFollowers([]);
       setSelected(new Set());
       setFetchProgress({ count: 0, loading: false });
@@ -83,26 +91,14 @@ export default function BlockMuteTool({ mode, t }: Props) {
     // When prefilled (session active), omit credentials — backend reads from session cookie
     const credFields = prefilled ? {} : { handle, password, stateless: true };
 
-    try {
-      const res = await fetch('/api/bluesky/followers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...credFields, targetHandle }),
-      });
-
-      if (!res.body) {
-        setError(t.errorGeneral);
-        setStep('target');
-        setFetchProgress({ count: 0, loading: false });
-        return;
-      }
-
+    /** Reads an SSE stream and returns the fetched members + optional targetDid. */
+    const readSseStream = async (res: Response): Promise<{ fetched: Follower[]; resolvedTargetDid: string } | null> => {
+      if (!res.body) { setError(t.errorGeneral); setStep('target'); setFetchProgress({ count: 0, loading: false }); return null; }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let fetched: import('@/types').Follower[] = [];
+      let fetched: Follower[] = [];
       let resolvedTargetDid = '';
-
       outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -113,26 +109,57 @@ export default function BlockMuteTool({ mode, t }: Props) {
           if (!line.startsWith('data: ')) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.error) {
-              setError(event.error);
-              setStep('target');
-              setFetchProgress({ count: 0, loading: false });
-              return;
-            }
-            if (typeof event.count === 'number') {
-              setFetchProgress({ count: event.count, loading: true });
-            }
+            if (event.error) { setError(event.error); setStep('target'); setFetchProgress({ count: 0, loading: false }); return null; }
+            if (typeof event.count === 'number') setFetchProgress({ count: event.count, loading: true });
             if (event.complete) {
-              fetched = event.followers ?? [];
+              fetched = event.followers ?? event.members ?? [];
               resolvedTargetDid = event.targetDid ?? '';
               break outer;
             }
           } catch { /* ignore parse errors */ }
         }
       }
+      return { fetched, resolvedTargetDid };
+    };
+
+    try {
+      let fetchEndpoint: string;
+      let fetchBody: Record<string, unknown>;
+
+      if (source === 'list') {
+        fetchEndpoint = '/api/bluesky/list-members';
+        fetchBody = { ...credFields, list_uri: listUri };
+      } else {
+        fetchEndpoint = '/api/bluesky/followers';
+        fetchBody = { ...credFields, targetHandle };
+      }
+
+      const res = await fetch(fetchEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fetchBody),
+      });
+
+      const result = await readSseStream(res);
+      if (!result) return;
+      const { fetched, resolvedTargetDid } = result;
 
       setTargetDid(resolvedTargetDid);
       setFollowers(fetched);
+
+      // Fetch exclusion list members (if set) and build a set of DIDs to auto-deselect
+      let excludeSet = new Set<string>();
+      if (excludeListUri.trim().startsWith('at://') && fetched.length > 0) {
+        try {
+          const exRes = await fetch('/api/bluesky/list-members', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...credFields, list_uri: excludeListUri }),
+          });
+          const exResult = await readSseStream(exRes);
+          if (exResult) excludeSet = new Set(exResult.fetched.map((m) => m.did));
+        } catch { /* non-fatal — proceed without exclusion */ }
+      }
 
       // Check mutuals + actioned if session is active
       if (prefilled && fetched.length > 0) {
@@ -160,9 +187,9 @@ export default function BlockMuteTool({ mode, t }: Props) {
           const aData = await aRes.json();
           setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
         }
-        setSelected(new Set(fetched.filter((f) => !mSet.has(f.did)).map((f) => f.did)));
+        setSelected(new Set(fetched.filter((f) => !mSet.has(f.did) && !excludeSet.has(f.did)).map((f) => f.did)));
       } else {
-        setSelected(new Set(fetched.map((f) => f.did)));
+        setSelected(new Set(fetched.filter((f) => !excludeSet.has(f.did)).map((f) => f.did)));
       }
 
       setFetchProgress({ count: fetched.length, loading: false });
@@ -176,10 +203,13 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const handleSaveInlineSub = async () => {
     setInlineSubSaving(true);
     try {
+      const subBody = source === 'list'
+        ? { target_handle: listUri, mode, sub_type: 'list', include_followers: false, config: { list_uri: listUri, ...(excludeListUri.trim().startsWith('at://') ? { exclude_list_uri: excludeListUri } : {}) } }
+        : { target_handle: targetHandle, mode, sub_type: 'follower', include_followers: includeFollowers, ...(excludeListUri.trim().startsWith('at://') ? { config: { exclude_list_uri: excludeListUri } } : {}) };
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_handle: targetHandle, mode, sub_type: 'follower', include_followers: includeFollowers }),
+        body: JSON.stringify(subBody),
       });
       if (res.ok) setInlineSubSaved(true);
     } catch { /* ignore */ }
@@ -286,6 +316,10 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setTargetDid('');
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
+    setSource('followers');
+    setListUri('');
+    setExcludeListUri('');
+    setShowExclude(false);
     // If session credentials were prefilled, go back to target; otherwise back to credentials
     if (prefilled) {
       setStep('target');
@@ -404,44 +438,118 @@ export default function BlockMuteTool({ mode, t }: Props) {
               <span>{t.usingSubscriptionAccount} <span className="font-mono font-semibold">@{handle}</span></span>
             </div>
           )}
+
+          {/* Source selector */}
           <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
-            <input
-              type="text"
-              value={targetHandle}
-              onChange={(e) => setTargetHandle(e.target.value)}
-              placeholder={t.targetHandlePlaceholder}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={input}
-              onKeyDown={(e) => e.key === 'Enter' && handleLoadFollowers()}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            {[
-              { value: true, label: t.includeFollowers },
-              { value: false, label: t.withoutFollowers },
-            ].map(({ value, label }) => (
-              <label
-                key={String(value)}
-                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
-                style={{
-                  backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                  border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
-                }}
-                onClick={() => setIncludeFollowers(value)}
-              >
-                <div
-                  className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                  style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
+            <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>{t.listSource}</label>
+            <div className="flex flex-col gap-2">
+              {([
+                { value: 'followers', label: t.listSourceFollowers },
+                { value: 'list', label: t.listSourceList },
+              ] as const).map(({ value, label }) => (
+                <label
+                  key={value}
+                  className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+                  style={{
+                    backgroundColor: source === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                    border: `1px solid ${source === value ? 'var(--accent)' : 'var(--bg-border)'}`,
+                  }}
+                  onClick={() => setSource(value)}
                 >
-                  {includeFollowers === value && (
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                  )}
-                </div>
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
-              </label>
-            ))}
+                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                    style={{ borderColor: source === value ? 'var(--accent)' : 'var(--bg-border)' }}>
+                    {source === value && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />}
+                  </div>
+                  <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                    {value === 'list' && <List size={13} style={{ color: 'var(--text-secondary)' }} />}
+                    {label}
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
+
+          {/* Target: account handle (followers source) */}
+          {source === 'followers' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
+                <input
+                  type="text"
+                  value={targetHandle}
+                  onChange={(e) => setTargetHandle(e.target.value)}
+                  placeholder={t.targetHandlePlaceholder}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+                  style={input}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLoadFollowers()}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                {[
+                  { value: true, label: t.includeFollowers },
+                  { value: false, label: t.withoutFollowers },
+                ].map(({ value, label }) => (
+                  <label
+                    key={String(value)}
+                    className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+                    style={{
+                      backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                      border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
+                    }}
+                    onClick={() => setIncludeFollowers(value)}
+                  >
+                    <div
+                      className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                      style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
+                    >
+                      {includeFollowers === value && (
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                      )}
+                    </div>
+                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Target: list picker (list source) */}
+          {source === 'list' && (
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.listPickerTitle}</label>
+              <ListPicker
+                t={t}
+                credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
+                selectedUri={listUri}
+                onSelect={setListUri}
+              />
+            </div>
+          )}
+
+          {/* Exclusion list (collapsible, both sources) */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowExclude((v) => !v)}
+              className="flex items-center gap-2 text-xs font-medium transition-colors"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showExclude ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}
+            >
+              {showExclude ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {t.listExcludeToggle}
+            </button>
+            {showExclude && (
+              <div className="mt-3 flex flex-col gap-2">
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.listExcludeHint}</p>
+                <ListPicker
+                  t={t}
+                  credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
+                  selectedUri={excludeListUri}
+                  onSelect={setExcludeListUri}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3">
             <button
               onClick={() => setStep('credentials')}
@@ -455,11 +563,11 @@ export default function BlockMuteTool({ mode, t }: Props) {
               className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
             >
-              {includeFollowers ? t.loadFollowers : t.next}
+              {source === 'list' ? t.next : (includeFollowers ? t.loadFollowers : t.next)}
             </button>
           </div>
           {/* Inline subscription card (session only, when target entered) */}
-          {prefilled && targetHandle.trim() && (
+          {prefilled && (source === 'list' ? listUri : targetHandle.trim()) && (
             <div className="p-4 rounded-xl flex items-center justify-between gap-3"
               style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}>
               <div className="flex items-center gap-2 min-w-0">
