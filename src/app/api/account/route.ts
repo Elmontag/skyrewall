@@ -5,11 +5,13 @@ import { encrypt, decrypt } from '@/lib/encryption';
 import { getSessionUserId } from '@/lib/session';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 import { createAgent } from '@/lib/bluesky';
+import { createOAuthAgent, deleteOAuthSession } from '@/lib/oauth-client';
 
 interface UserRow {
   id: string;
   handle: string;
   encrypted_password: string | null;
+  did: string | null;
 }
 
 async function getUser(): Promise<UserRow | null> {
@@ -17,7 +19,7 @@ async function getUser(): Promise<UserRow | null> {
   if (!userId) return null;
   try {
     const rows = await query<UserRow>(
-      'SELECT id, handle, encrypted_password FROM users WHERE id = $1',
+      'SELECT id, handle, encrypted_password, did FROM users WHERE id = $1',
       [userId]
     );
     return rows[0] ?? null;
@@ -47,6 +49,9 @@ export async function DELETE(req: NextRequest) {
   });
   if (limited) return limited;
 
+  if (user.did) {
+    await deleteOAuthSession(user.did);
+  }
   await query('DELETE FROM users WHERE id = $1', [user.id]);
 
   const response = NextResponse.json({ success: true });
@@ -78,9 +83,19 @@ export async function PATCH(req: NextRequest) {
         // App-password users: verify new handle with stored password against the user's PDS
         const currentPassword = decrypt(user.encrypted_password);
         await createAgent(newHandle, currentPassword);
+      } else {
+        if (!user.did) {
+          return NextResponse.json({ error: 'OAuth identity is missing for this account.' }, { status: 400 });
+        }
+        const agent = await createOAuthAgent(user.did);
+        const profile = await agent.getProfile({ actor: user.did });
+        if (profile.data.handle !== newHandle) {
+          return NextResponse.json(
+            { error: `OAuth accounts must use the handle currently verified by BlueSky: ${profile.data.handle}` },
+            { status: 400 }
+          );
+        }
       }
-      // OAuth-only users: handle update accepted without password verification
-      // (they proved identity via OAuth; handle is informational for display)
       try {
         await query('UPDATE users SET handle = $1 WHERE id = $2', [newHandle, user.id]);
       } catch (dbErr: unknown) {

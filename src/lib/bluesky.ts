@@ -5,6 +5,7 @@ import { query } from '@/lib/db';
 import { logBlockEvents } from '@/lib/block-events';
 import { isValidDid } from '@/lib/session';
 import { createOAuthAgent } from '@/lib/oauth-client';
+import { assertPublicPdsHostname, didWebToDocumentUrl, validatePdsServiceEndpoint } from '@/lib/pds';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
@@ -48,42 +49,49 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
  * Resolves a handle or DID to the user's actual PDS service URL.
  * Uses the Bluesky relay for handle→DID resolution, then the PLC directory
  * or did:web well-known for DID→PDS resolution.
- * Falls back to https://bsky.social on any error.
+ * Fails closed when identity or PDS endpoint discovery cannot be verified so
+ * app-password credentials are never sent to an unintended fallback PDS.
  */
 export async function resolvePdsUrl(handleOrDid: string): Promise<string> {
-  try {
-    let did: string;
+  let did: string;
 
-    if (handleOrDid.startsWith('did:')) {
-      did = handleOrDid;
-    } else {
-      const res = await fetch(
-        `https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handleOrDid)}`
-      );
-      if (!res.ok) return 'https://bsky.social';
-      ({ did } = (await res.json()) as { did: string });
-    }
-
-    let didDocUrl: string;
-    if (did.startsWith('did:plc:')) {
-      didDocUrl = `https://plc.directory/${did}`;
-    } else if (did.startsWith('did:web:')) {
-      const domain = did.slice('did:web:'.length);
-      didDocUrl = `https://${domain}/.well-known/did.json`;
-    } else {
-      return 'https://bsky.social';
-    }
-
-    const docRes = await fetch(didDocUrl);
-    if (!docRes.ok) return 'https://bsky.social';
-    const doc = (await docRes.json()) as { service?: { id: string; serviceEndpoint: string }[] };
-
-    const pds = doc.service?.find((s) => s.id === '#atproto_pds');
-    if (pds?.serviceEndpoint) return pds.serviceEndpoint;
-  } catch {
-    // Fall through to default
+  if (handleOrDid.startsWith('did:')) {
+    did = handleOrDid;
+  } else {
+    const res = await fetch(
+      `https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handleOrDid)}`,
+      { redirect: 'error', signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) throw new Error('Could not resolve Bluesky handle to a DID');
+    ({ did } = (await res.json()) as { did: string });
   }
-  return 'https://bsky.social';
+
+  if (!isValidDid(did)) {
+    throw new Error('Resolved DID is invalid');
+  }
+
+  let didDocUrl: string;
+  if (did.startsWith('did:plc:')) {
+    didDocUrl = `https://plc.directory/${encodeURIComponent(did)}`;
+  } else if (did.startsWith('did:web:')) {
+    didDocUrl = didWebToDocumentUrl(did);
+  } else {
+    throw new Error('Unsupported DID method for PDS discovery');
+  }
+
+  const docRes = await fetch(didDocUrl, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!docRes.ok) throw new Error('Could not fetch DID document for PDS discovery');
+  const doc = (await docRes.json()) as { service?: { id: string; serviceEndpoint: string }[] };
+
+  const pds = doc.service?.find((s) => s.id === '#atproto_pds');
+  if (!pds?.serviceEndpoint) throw new Error('DID document does not declare an AT Protocol PDS');
+
+  const serviceEndpoint = validatePdsServiceEndpoint(pds.serviceEndpoint);
+  await assertPublicPdsHostname(serviceEndpoint);
+  return serviceEndpoint;
 }
 
 export async function createAgent(handle: string, password: string): Promise<BskyAgent> {

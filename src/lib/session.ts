@@ -43,11 +43,12 @@ export async function getSessionCredentials(): Promise<SessionCredentials | null
   const userId = await getSessionUserId();
   if (!userId) return null;
   try {
-    const rows = await query<{ handle: string; encrypted_password: string }>(
+    const rows = await query<{ handle: string; encrypted_password: string | null }>(
       'SELECT handle, encrypted_password FROM users WHERE id = $1',
       [userId]
     );
     if (rows.length === 0) return null;
+    if (!rows[0].encrypted_password) return null;
     return { handle: rows[0].handle, password: decrypt(rows[0].encrypted_password) };
   } catch {
     return null;

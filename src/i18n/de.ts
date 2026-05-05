@@ -131,6 +131,7 @@ const de: Translations = {
 
   // AT Protocol OAuth
   loginWithBluesky: 'Mit Bluesky anmelden',
+  registerWithBluesky: 'Mit Bluesky registrieren',
   oauthLoginDesc: 'Melde dich direkt mit deinem Bluesky-Konto an — kein App-Passwort nötig. Funktioniert mit jedem AT-Protocol-Server.',
   oauthHandleOptional: 'Handle (optional)',
   oauthHandleOptionalPlaceholder: 'deinhandle.bsky.social',
@@ -139,6 +140,16 @@ const de: Translations = {
   oauthErrorTitle: 'Anmeldung fehlgeschlagen',
   oauthErrorDesc: 'Die OAuth-Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.',
   oauthAccountLinked: 'Dein bestehendes Konto wurde über Bluesky OAuth verknüpft.',
+  oauthSessionExpiredTitle: 'Bluesky-Verbindung unterbrochen',
+  oauthSessionExpiredDesc: 'Deine Bluesky-Autorisierung ist abgelaufen oder wurde widerrufen. Abonnements sind pausiert, bis du dich neu autorisierst.',
+  oauthSessionReauthorize: 'Erneut mit Bluesky autorisieren',
+  authMethodOAuth: 'via Bluesky OAuth',
+  authMethodPassword: 'via App-Passwort',
+  authStep1Label: 'Konto',
+  authStep2Label: 'App-Passwort',
+  continueWithPassword: 'Weiter mit App-Passwort',
+  loginStep2Title: 'App-Passwort eingeben',
+  registerStep2Title: 'App-Passwort festlegen',
   orDivider: 'oder mit App-Passwort anmelden',
 
   // Privacy / Legal

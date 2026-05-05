@@ -129,6 +129,7 @@ const en = {
 
   // AT Protocol OAuth
   loginWithBluesky: 'Sign in with Bluesky',
+  registerWithBluesky: 'Register with Bluesky',
   oauthLoginDesc: 'Use your Bluesky account directly — no app password needed. Works with any AT Protocol server.',
   oauthHandleOptional: 'Handle (optional)',
   oauthHandleOptionalPlaceholder: 'yourhandle.bsky.social',
@@ -137,6 +138,16 @@ const en = {
   oauthErrorTitle: 'Sign-in failed',
   oauthErrorDesc: 'The OAuth sign-in could not be completed. Please try again.',
   oauthAccountLinked: 'Your existing account was linked via Bluesky OAuth.',
+  oauthSessionExpiredTitle: 'Bluesky connection lost',
+  oauthSessionExpiredDesc: 'Your Bluesky authorization has expired or was revoked. Subscriptions are paused until you re-authorize.',
+  oauthSessionReauthorize: 'Re-authorize with Bluesky',
+  authMethodOAuth: 'via Bluesky OAuth',
+  authMethodPassword: 'via App Password',
+  authStep1Label: 'Account',
+  authStep2Label: 'App Password',
+  continueWithPassword: 'Continue with App Password',
+  loginStep2Title: 'Enter App Password',
+  registerStep2Title: 'Set App Password',
   orDivider: 'or sign in with app password',
 
   // Privacy / Legal

@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { parseSession } from '@/lib/session';
 import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
-import { rejectCrossOrigin, getClientIp } from '@/lib/request-security';
+import { rejectCrossOrigin, getClientIp, sanitizeError } from '@/lib/request-security';
 import { createAgent } from '@/lib/bluesky';
 
 // Per-IP limit: guards against distributed brute-force
@@ -18,6 +18,8 @@ interface UserRow {
   id: string;
   handle: string;
   encrypted_password: string | null;
+  did: string | null;
+  oauth_error_since: string | null;
 }
 
 export async function GET() {
@@ -29,9 +31,22 @@ export async function GET() {
   const parsed = parseSession(session.value);
   if (!parsed) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
   try {
-    const rows = await query<UserRow>('SELECT id, handle FROM users WHERE id = $1', [parsed.userId]);
+    const rows = await query<UserRow>(
+      'SELECT id, handle, encrypted_password, did, oauth_error_since FROM users WHERE id = $1',
+      [parsed.userId]
+    );
     if (rows.length === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    return NextResponse.json({ user: { id: rows[0].id, handle: rows[0].handle } });
+    const user = rows[0];
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        handle: user.handle,
+        // isOAuth mirrors sync-worker priority: OAuth is used whenever `did` is set,
+        // regardless of whether an app-password is also stored.
+        isOAuth: !!user.did,
+        oauthErrorSince: user.oauth_error_since ?? null,
+      },
+    });
   } catch {
     return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
   }
@@ -73,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     const rows = await query<UserRow>(
-      'SELECT id, handle, encrypted_password FROM users WHERE handle = $1',
+      'SELECT id, handle, encrypted_password, did FROM users WHERE handle = $1',
       [handle]
     );
 
@@ -85,25 +100,31 @@ export async function POST(req: NextRequest) {
 
     // Verify password against the user's actual PDS (source of truth)
     const agent = await createAgent(handle, password);
+    const sessionDid = agent.session?.did;
+    if (user.did && sessionDid && user.did !== sessionDid) {
+      return NextResponse.json({ error: 'This handle is linked to a different account identity.' }, { status: 409 });
+    }
 
-    // If the stored password differs (e.g. user rotated their BlueSky app-password),
-    // update it silently — BlueSky login above is the source of truth.
-    const storedPassword = decrypt(user.encrypted_password ?? '');
-    if (storedPassword !== password) {
+    if (!user.encrypted_password) {
       await query(
         'UPDATE users SET encrypted_password = $1 WHERE id = $2',
         [encrypt(password), user.id]
       );
+    } else {
+      // If the stored password differs (e.g. user rotated their BlueSky app-password),
+      // update it silently — BlueSky login above is the source of truth.
+      const storedPassword = decrypt(user.encrypted_password);
+      if (storedPassword !== password) {
+        await query(
+          'UPDATE users SET encrypted_password = $1 WHERE id = $2',
+          [encrypt(password), user.id]
+        );
+      }
     }
 
-    // Backfill DID if not yet stored (populates for OAuth account-linking)
-    const sessionDid = agent.session?.did;
-    if (sessionDid && !user.encrypted_password) {
-      // should not happen, but guard: don't overwrite with null
-    }
     if (sessionDid) {
       await query(
-        'UPDATE users SET did = $1 WHERE id = $2 AND did IS NULL',
+        'UPDATE users SET did = $1 WHERE id = $2 AND (did IS NULL OR did = $1)',
         [sessionDid, user.id]
       ).catch(() => {}); // ignore unique-constraint conflicts
     }
@@ -120,6 +141,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
+    console.error('[login] error:', sanitizeError(err));
     return NextResponse.json({ error: 'Login failed' }, { status: 500 });
   }
 }

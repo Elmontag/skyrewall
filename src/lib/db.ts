@@ -160,4 +160,9 @@ export async function initDb(): Promise<void> {
 
   // Clean up expired OAuth states (best-effort)
   await query(`DELETE FROM oauth_states WHERE expires_at < NOW()`).catch(() => {});
+
+  // Track when an OAuth session last failed to restore (subscription sync sets/clears this)
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_error_since TIMESTAMPTZ
+  `).catch(() => {});
 }

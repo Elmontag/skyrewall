@@ -120,3 +120,7 @@ export async function createOAuthAgent(did: string): Promise<Agent> {
   const oauthSession = await client.restore(did);
   return new Agent(oauthSession);
 }
+
+export async function deleteOAuthSession(did: string): Promise<void> {
+  await pgSessionStore.del(did);
+}

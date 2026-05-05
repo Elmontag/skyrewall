@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Agent } from '@atproto/api';
-import { getOAuthClient } from '@/lib/oauth-client';
+import { deleteOAuthSession, getOAuthClient } from '@/lib/oauth-client';
 import { query } from '@/lib/db';
-import { signSession } from '@/lib/encryption';
+import { decrypt, signSession } from '@/lib/encryption';
 import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
 import { isValidDid } from '@/lib/session';
+import { createAgent } from '@/lib/bluesky';
+import { sanitizeError } from '@/lib/request-security';
 
 interface UserRow {
   id: string;
   handle: string;
+  encrypted_password: string | null;
+  did: string | null;
 }
 
 export async function GET(req: NextRequest) {
@@ -38,14 +42,32 @@ export async function GET(req: NextRequest) {
     }
 
     // 1. Try to find an existing account by DID
-    let rows = await query<UserRow>('SELECT id, handle FROM users WHERE did = $1', [did]);
+    let rows = await query<UserRow>('SELECT id, handle, encrypted_password, did FROM users WHERE did = $1', [did]);
 
-    // 2. Fall back to handle lookup — links existing app-password accounts
+    // 2. Link existing app-password accounts only when their stored credentials
+    // still prove ownership of this same DID. Do not link by handle alone.
     if (rows.length === 0 && handle) {
-      rows = await query<UserRow>('SELECT id, handle FROM users WHERE handle = $1', [handle]);
-      if (rows.length > 0) {
-        // Link DID to the existing account
-        await query('UPDATE users SET did = $1 WHERE id = $2', [did, rows[0].id]);
+      const handleRows = await query<UserRow>(
+        'SELECT id, handle, encrypted_password, did FROM users WHERE handle = $1',
+        [handle]
+      );
+      const existing = handleRows[0];
+      if (existing?.encrypted_password && !existing.did) {
+        try {
+          const agent = await createAgent(handle, decrypt(existing.encrypted_password));
+          if (agent.session?.did === did) {
+            await query('UPDATE users SET did = $1 WHERE id = $2', [did, existing.id]);
+            rows = [{ ...existing, did }];
+          }
+        } catch {
+          // Do not link on verification failure.
+        }
+      } else if (existing?.did === did) {
+        rows = [existing];
+      }
+      if (existing && rows.length === 0) {
+        await deleteOAuthSession(did);
+        throw new Error('OAuth handle is already registered to a different local identity.');
       }
     }
 
@@ -62,8 +84,7 @@ export async function GET(req: NextRequest) {
       const created = await query<UserRow>(
         `INSERT INTO users (handle, did, encrypted_password)
          VALUES ($1, $2, NULL)
-         ON CONFLICT (handle) DO UPDATE SET did = $2
-         RETURNING id, handle`,
+         RETURNING id, handle, encrypted_password, did`,
         [handle, did]
       );
       user = created[0];
@@ -80,8 +101,7 @@ export async function GET(req: NextRequest) {
     });
     return response;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[oauth/callback] error:', message);
+    console.error('[oauth/callback] error:', sanitizeError(err));
     const errorUrl = `${appUrl}/?tab=account&oauth_error=1`;
     return NextResponse.redirect(errorUrl);
   }
