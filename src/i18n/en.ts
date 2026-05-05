@@ -38,6 +38,8 @@ const en = {
   reblockClearSkyNote: 'Blocker data is fetched via the ClearSky API (clearsky.app) — no credentials are shared with that service.',
   kofiSupport: 'Support this project',
   homeGetStarted: 'Open Block Tool',
+  betaNoticeLabel: 'Early Access',
+  betaNoticeText: 'SkyRewall is in active development. Large operations (500+ accounts) may hit BlueSky rate limits — the tool pauses and retries automatically, but jobs can take several minutes.',
 
   // Account management
   accountTitle: 'Account',

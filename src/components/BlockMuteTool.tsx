@@ -36,7 +36,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [protectMutuals, setProtectMutuals] = useState(true);
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
-  const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number } | null>(null);
+  const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number; startedAt: number } | null>(null);
   const [processError, setProcessError] = useState('');
   const [targetDid, setTargetDid] = useState('');
 
@@ -254,7 +254,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
             try {
               const event = JSON.parse(line.slice(6));
               if (event.error) throw new Error(event.error);
-              setStreamProgress({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+              setStreamProgress(prev => ({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0, startedAt: prev?.startedAt ?? Date.now() }));
               if (event.complete) {
                 if (event.warning) setProcessError(event.warning);
                 setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
@@ -570,9 +570,9 @@ export default function BlockMuteTool({ mode, t }: Props) {
                     style={{ width: `${(streamProgress.done / streamProgress.total) * 100}%`, backgroundColor: 'var(--accent)' }}
                   />
                 </div>
-                {streamProgress.done < streamProgress.total && (
+                {streamProgress.done > 0 && streamProgress.done < streamProgress.total && (
                   <p className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
-                    {t.streamingEta.replace('{secs}', String(Math.ceil((streamProgress.total - streamProgress.done) * 0.06)))}
+                    {t.streamingEta.replace('{secs}', String(Math.ceil((streamProgress.total - streamProgress.done) * (Date.now() - streamProgress.startedAt) / streamProgress.done / 1000)))}
                   </p>
                 )}
               </div>

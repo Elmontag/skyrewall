@@ -40,6 +40,8 @@ const de: Translations = {
   reblockClearSkyNote: 'Blocker-Daten werden über die ClearSky-API (clearsky.app) abgerufen — es werden keine Zugangsdaten an diesen Dienst übermittelt.',
   kofiSupport: 'Projekt unterstützen',
   homeGetStarted: 'Block-Tool öffnen',
+  betaNoticeLabel: 'Early Access',
+  betaNoticeText: 'SkyRewall befindet sich in aktiver Entwicklung. Große Operationen (500+ Accounts) können BlueSky-Rate-Limits auslösen — das Tool pausiert und wiederholt automatisch, aber Aufgaben können mehrere Minuten dauern.',
 
   // Account management
   accountTitle: 'Konto',

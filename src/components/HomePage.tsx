@@ -1,5 +1,5 @@
 'use client';
-import { ShieldX, VolumeX, Bell, ShieldCheck, KeyRound, RefreshCcw, MessageSquareX, BarChart2, Coffee, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, ShieldCheck, KeyRound, RefreshCcw, MessageSquareX, BarChart2, Coffee, FlaskConical, type LucideIcon } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
@@ -19,6 +19,13 @@ export default function HomePage({ t, onNavigate }: Props) {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Beta notice */}
+      <div className="rounded-xl px-4 py-3 flex gap-3 items-start text-xs"
+        style={{ backgroundColor: 'color-mix(in srgb, #f59e0b 10%, var(--bg-card))', border: '1px solid color-mix(in srgb, #f59e0b 30%, transparent)', color: 'var(--text-secondary)' }}>
+        <FlaskConical size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+        <span><span className="font-semibold" style={{ color: '#f59e0b' }}>{t.betaNoticeLabel}:</span> {t.betaNoticeText}</span>
+      </div>
+
       {/* Hero */}
       <div className="rounded-2xl p-7 flex flex-col gap-3"
         style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-dark) 100%)', border: '1px solid var(--bg-border)' }}>
