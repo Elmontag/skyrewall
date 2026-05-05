@@ -79,13 +79,42 @@ export default function HomePage({ t, onNavigate }: Props) {
 
       {/* Info cards */}
       <div className="flex flex-col gap-3">
-        <InfoCard
-          Icon={ShieldCheck}
-          title={t.homePrivacyHeading}
-          color="var(--success)"
-        >
-          {t.homePrivacyText}
-        </InfoCard>
+        {/* Privacy by Design - two-panel */}
+        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--bg-border)' }}>
+          {/* Header */}
+          <div className="flex items-center gap-3 px-5 py-4" style={{ backgroundColor: 'var(--bg-card)', borderBottom: '1px solid var(--bg-border)' }}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--success)' }}>
+              <ShieldCheck size={16} strokeWidth={1.75} />
+            </div>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t.homePrivacyHeading}</span>
+          </div>
+          {/* Two panels */}
+          <div className="grid grid-cols-1 sm:grid-cols-2" style={{ backgroundColor: 'var(--bg-card)' }}>
+            {/* Stateless panel */}
+            <div className="p-5 flex flex-col gap-2.5" style={{ borderRight: '1px solid var(--bg-border)', borderBottom: '1px solid var(--bg-border)' }}>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--success) 12%, transparent)', color: 'var(--success)' }}>
+                  ✓ {t.homePrivacyStatelessBadge}
+                </span>
+              </div>
+              <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t.homePrivacyStatelessHeading}</div>
+              <div className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{t.homePrivacyStatelessText}</div>
+            </div>
+            {/* Registered panel */}
+            <div className="p-5 flex flex-col gap-2.5" style={{ borderBottom: '1px solid var(--bg-border)' }}>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold"
+                  style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
+                  {t.homePrivacyRegisteredBadge}
+                </span>
+              </div>
+              <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t.homePrivacyRegisteredHeading}</div>
+              <div className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{t.homePrivacyRegisteredText}</div>
+            </div>
+          </div>
+        </div>
 
         <InfoCard
           Icon={KeyRound}
