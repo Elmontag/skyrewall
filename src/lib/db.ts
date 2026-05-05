@@ -125,4 +125,39 @@ export async function initDb(): Promise<void> {
   await query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS blocks_imported_at TIMESTAMPTZ
   `).catch(() => {});
+
+  // AT Protocol DID — populated on first app-password login and on OAuth
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS did TEXT
+  `).catch(() => {});
+
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_did_idx ON users(did) WHERE did IS NOT NULL
+  `).catch(() => {});
+
+  // Make encrypted_password nullable so OAuth-only users can exist
+  await query(`
+    ALTER TABLE users ALTER COLUMN encrypted_password DROP NOT NULL
+  `).catch(() => {});
+
+  // Encrypted OAuth session data (access + refresh token state), keyed by DID
+  await query(`
+    CREATE TABLE IF NOT EXISTS oauth_sessions (
+      did TEXT PRIMARY KEY,
+      session_data TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Short-lived OAuth state/PKCE verifier storage for the auth flow
+  await query(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+
+  // Clean up expired OAuth states (best-effort)
+  await query(`DELETE FROM oauth_states WHERE expires_at < NOW()`).catch(() => {});
 }

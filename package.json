@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@atproto/api": "^0.13.0",
+    "@atproto/oauth-client-node": "^0.3.17",
     "lucide-react": "^1.14.0",
     "marked": "^18.0.3",
     "next": "15.5.15",

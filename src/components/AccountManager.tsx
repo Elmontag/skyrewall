@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut, LogIn } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
@@ -55,6 +55,8 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
   const [authLoading, setAuthLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [oauthHandle, setOauthHandle] = useState('');
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   const handleField = useUpdateField('handle');
   const passwordField = useUpdateField('password');
@@ -72,6 +74,18 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       })
       .catch(() => setAuthStep('login'))
       .finally(() => setLoading(false));
+
+    // Detect OAuth callback errors redirected back with ?oauth_error=1
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('oauth_error') === '1') {
+        setAuthError(t.oauthErrorDesc);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('oauth_error');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogin = async () => {
@@ -145,6 +159,29 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
     onLogout?.();
   };
 
+  const handleOAuthLogin = async () => {
+    setOauthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth/oauth/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: oauthHandle.trim() || undefined }),
+      });
+      if (res.ok) {
+        const { redirectUrl } = await res.json();
+        window.location.href = redirectUrl;
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || t.oauthErrorDesc);
+        setOauthLoading(false);
+      }
+    } catch {
+      setAuthError(t.errorNetwork);
+      setOauthLoading(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!confirm(t.deleteAccountConfirm)) return;
     setDeleteError('');
@@ -191,6 +228,53 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
             <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {authError}
           </div>
         )}
+
+        {/* AT Protocol OAuth — only shown on login, not register */}
+        {!isRegister && (
+          <div className="flex flex-col gap-3 p-4 rounded-xl" style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}>
+            <div className="flex items-start gap-2">
+              <LogIn size={15} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+              <div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{t.loginWithBluesky}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.oauthLoginDesc}</div>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{t.oauthHandleOptional}</label>
+              <input
+                type="text"
+                value={oauthHandle}
+                onChange={(e) => setOauthHandle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleOAuthLogin()}
+                placeholder={t.oauthHandleOptionalPlaceholder}
+                className="w-full px-3 py-2 rounded-lg text-sm font-mono focus-ring transition-all"
+                style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)', color: 'var(--text-primary)' }}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{t.oauthHandleHint}</p>
+            </div>
+            <button
+              onClick={handleOAuthLogin}
+              disabled={oauthLoading}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+            >
+              {oauthLoading
+                ? <><RefreshCw size={14} className="animate-spin" /> {t.oauthConnecting}</>
+                : <><LogIn size={14} /> {t.loginWithBluesky}</>
+              }
+            </button>
+          </div>
+        )}
+
+        {/* Divider */}
+        {!isRegister && (
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.orDivider}</span>
+            <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+          </div>
+        )}
+
         <div className="flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
@@ -234,7 +318,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
           onClick={isRegister ? handleRegister : handleLogin}
           disabled={authLoading}
           className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+          style={{ backgroundColor: isRegister ? 'var(--accent)' : 'var(--bg-dark)', color: isRegister ? '#fff' : 'var(--text-primary)', border: isRegister ? 'none' : '1px solid var(--bg-border)' }}
         >
           {authLoading && <RefreshCw size={14} className="animate-spin" />}
           {authLoading ? t.loading : (isRegister ? t.register : t.login)}

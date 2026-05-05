@@ -40,13 +40,14 @@ export async function POST(req: NextRequest) {
     await agent.login({ identifier: handle, password });
 
     const encryptedPassword = encrypt(password);
+    const sessionDid = agent.session?.did ?? null;
 
     const rows = await query<UserRow>(
-      `INSERT INTO users (handle, encrypted_password)
-       VALUES ($1, $2)
+      `INSERT INTO users (handle, encrypted_password, did)
+       VALUES ($1, $2, $3)
        ON CONFLICT (handle) DO NOTHING
        RETURNING id, handle`,
-      [handle, encryptedPassword]
+      [handle, encryptedPassword, sessionDid]
     );
 
     if (rows.length === 0) {

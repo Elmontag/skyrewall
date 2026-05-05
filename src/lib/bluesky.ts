@@ -1,8 +1,10 @@
 import { BskyAgent } from '@atproto/api';
+import type { Agent } from '@atproto/api';
 import type { Follower } from '@/types';
 import { query } from '@/lib/db';
 import { logBlockEvents } from '@/lib/block-events';
 import { isValidDid } from '@/lib/session';
+import { createOAuthAgent } from '@/lib/oauth-client';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
@@ -46,6 +48,15 @@ export async function createAgent(handle: string, password: string): Promise<Bsk
   const agent = new BskyAgent({ service: 'https://bsky.social' });
   await agent.login({ identifier: handle, password });
   return agent;
+}
+
+/**
+ * Creates an agent for an OAuth user by restoring their stored session.
+ * Works with any AT Protocol PDS — service URL is discovered from the DID.
+ * Throws if the OAuth session is missing or cannot be refreshed.
+ */
+export async function createAgentForOAuth(did: string): Promise<Agent> {
+  return createOAuthAgent(did);
 }
 
 export async function fetchAllFollowers(
@@ -93,7 +104,8 @@ export async function blockAccounts(
   agent: BskyAgent,
   dids: string[],
   batchSize = 10,
-  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
+  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void,
+  repoDid?: string
 ): Promise<{ succeeded: number; failed: number; succeededDids: string[] }> {
   let succeeded = 0;
   let failed = 0;
@@ -104,10 +116,11 @@ export async function blockAccounts(
     await Promise.allSettled(
       batch.map(async (did) => {
         try {
-          if (!agent.session) throw new Error('No active session');
+          const repo = repoDid ?? agent.session?.did;
+          if (!repo) throw new Error('No active session');
           await withRetry(() =>
             agent.app.bsky.graph.block.create(
-              { repo: agent.session!.did },
+              { repo },
               { subject: did, createdAt: new Date().toISOString() }
             )
           );

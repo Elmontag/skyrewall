@@ -129,6 +129,18 @@ const de: Translations = {
   deleteAccount: 'Konto löschen',
   deleteAccountConfirm: 'Bist du sicher? Damit werden alle deine Abonnements gelöscht.',
 
+  // AT Protocol OAuth
+  loginWithBluesky: 'Mit Bluesky anmelden',
+  oauthLoginDesc: 'Melde dich direkt mit deinem Bluesky-Konto an — kein App-Passwort nötig. Funktioniert mit jedem AT-Protocol-Server.',
+  oauthHandleOptional: 'Handle (optional)',
+  oauthHandleOptionalPlaceholder: 'deinhandle.bsky.social',
+  oauthHandleHint: 'Handle eingeben, um zu deinem eigenen PDS weitergeleitet zu werden. Leer lassen für Bluesky.',
+  oauthConnecting: 'Weiterleitung…',
+  oauthErrorTitle: 'Anmeldung fehlgeschlagen',
+  oauthErrorDesc: 'Die OAuth-Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.',
+  oauthAccountLinked: 'Dein bestehendes Konto wurde über Bluesky OAuth verknüpft.',
+  orDivider: 'oder mit App-Passwort anmelden',
+
   // Privacy / Legal
   privacyPolicyAccept: 'Ich habe die',
   privacyPolicyAcceptSuffix: ' gelesen und akzeptiert.',

@@ -127,6 +127,18 @@ const en = {
   deleteAccount: 'Delete Account',
   deleteAccountConfirm: 'Are you sure? This will delete all your subscriptions.',
 
+  // AT Protocol OAuth
+  loginWithBluesky: 'Sign in with Bluesky',
+  oauthLoginDesc: 'Use your Bluesky account directly — no app password needed. Works with any AT Protocol server.',
+  oauthHandleOptional: 'Handle (optional)',
+  oauthHandleOptionalPlaceholder: 'yourhandle.bsky.social',
+  oauthHandleHint: 'Enter your handle to be directed to your own PDS. Leave blank for Bluesky.',
+  oauthConnecting: 'Redirecting…',
+  oauthErrorTitle: 'Sign-in failed',
+  oauthErrorDesc: 'The OAuth sign-in could not be completed. Please try again.',
+  oauthAccountLinked: 'Your existing account was linked via Bluesky OAuth.',
+  orDivider: 'or sign in with app password',
+
   // Privacy / Legal
   privacyPolicyAccept: 'I have read and accept the',
   privacyPolicyAcceptSuffix: '.',

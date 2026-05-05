@@ -13,7 +13,7 @@ const AUTH_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 
 interface UserRow {
   id: string;
   handle: string;
-  encrypted_password: string;
+  encrypted_password: string | null;
 }
 
 export async function GET() {
@@ -71,12 +71,24 @@ export async function POST(req: NextRequest) {
 
     // If the stored password differs (e.g. user rotated their BlueSky app-password),
     // update it silently — BlueSky login above is the source of truth.
-    const storedPassword = decrypt(user.encrypted_password);
+    const storedPassword = decrypt(user.encrypted_password ?? '');
     if (storedPassword !== password) {
       await query(
         'UPDATE users SET encrypted_password = $1 WHERE id = $2',
         [encrypt(password), user.id]
       );
+    }
+
+    // Backfill DID if not yet stored (populates for OAuth account-linking)
+    const sessionDid = agent.session?.did;
+    if (sessionDid && !user.encrypted_password) {
+      // should not happen, but guard: don't overwrite with null
+    }
+    if (sessionDid) {
+      await query(
+        'UPDATE users SET did = $1 WHERE id = $2 AND did IS NULL',
+        [sessionDid, user.id]
+      ).catch(() => {}); // ignore unique-constraint conflicts
     }
 
     const sessionData = signSession(JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) }));

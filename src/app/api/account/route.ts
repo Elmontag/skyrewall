@@ -9,7 +9,7 @@ import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/reque
 interface UserRow {
   id: string;
   handle: string;
-  encrypted_password: string;
+  encrypted_password: string | null;
 }
 
 async function getUser(): Promise<UserRow | null> {
@@ -71,13 +71,17 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const currentPassword = decrypt(user.encrypted_password);
     const agent = new BskyAgent({ service: 'https://bsky.social' });
 
     if (body.handle) {
       const newHandle: string = body.handle.trim();
-      // Verify new handle with current stored password — acts as ownership proof
-      await agent.login({ identifier: newHandle, password: currentPassword });
+      if (user.encrypted_password) {
+        // App-password users: verify new handle with stored password
+        const currentPassword = decrypt(user.encrypted_password);
+        await agent.login({ identifier: newHandle, password: currentPassword });
+      }
+      // OAuth-only users: handle update accepted without password verification
+      // (they proved identity via OAuth; handle is informational for display)
       try {
         await query('UPDATE users SET handle = $1 WHERE id = $2', [newHandle, user.id]);
       } catch (dbErr: unknown) {
@@ -91,6 +95,12 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (body.password) {
+      if (!user.encrypted_password) {
+        return NextResponse.json(
+          { error: 'OAuth accounts cannot set an app password here. Please use app-password login separately.' },
+          { status: 400 }
+        );
+      }
       const newPassword: string = body.password.trim();
       // Verify current handle with new password
       await agent.login({ identifier: user.handle, password: newPassword });
