@@ -18,7 +18,6 @@ const de: Translations = {
   muteToolDesc: 'Stumm schalten von Accounts und ihren Followern, ohne sie zu benachrichtigen.',
 
   // Home page
-  homeHero: 'BlueSky-Moderation, vereinfacht.',
   homeSubtitle: 'Blockiere oder schalte stumm — die Follower jedes Accounts. Einmalig oder automatisiert. Open Source, datenschutzorientiert.',
   homePrivacyHeading: 'Datenschutz by Design',
   homePrivacyStatelessHeading: 'Ohne Account — keine Daten gespeichert',

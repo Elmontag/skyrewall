@@ -26,36 +26,6 @@ export default function HomePage({ t, onNavigate }: Props) {
         <span><span className="font-semibold" style={{ color: '#f59e0b' }}>{t.betaNoticeLabel}:</span> {t.betaNoticeText}</span>
       </div>
 
-      {/* Hero */}
-      <div className="rounded-2xl p-7 flex flex-col gap-3"
-        style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-dark) 100%)', border: '1px solid var(--bg-border)' }}>
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-          {t.homeHero}
-        </h1>
-        <p className="text-sm leading-relaxed max-w-xl" style={{ color: 'var(--text-secondary)' }}>
-          {t.homeSubtitle}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => onNavigate('block')}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all inline-flex items-center gap-2"
-            style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-          >
-            <ShieldX size={15} /> {t.homeGetStarted}
-          </button>
-          {/* Ko-fi */}
-          <a
-            href="https://ko-fi.com/elmontag"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all"
-            style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
-          >
-            <Coffee size={14} /> {t.kofiSupport}
-          </a>
-        </div>
-      </div>
-
       {/* Feature cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {features.map(({ Icon, title, desc, tab, color }) => (

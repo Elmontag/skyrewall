@@ -16,7 +16,6 @@ const en = {
   muteToolDesc: 'Silently mute accounts and their followers without notifying them.',
 
   // Home page
-  homeHero: 'BlueSky moderation, simplified.',
   homeSubtitle: 'Block or mute the followers of any account — in one click or on a schedule. Open source, privacy-first.',
   homePrivacyHeading: 'Your privacy by design',
   homePrivacyStatelessHeading: 'Without an account — zero data stored',

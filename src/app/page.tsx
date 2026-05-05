@@ -56,7 +56,7 @@ export default function Home() {
   }, []);
 
   const mainTabs: TabMeta[] = [
-    { id: 'home',      label: t.home,          description: t.homeSubtitle,     Icon: HomeIcon       },
+    { id: 'home',      label: t.home,          description: '',                 Icon: HomeIcon       },
     { id: 'block',     label: t.blockTool,     description: t.blockToolDesc,    Icon: ShieldX        },
     { id: 'mute',      label: t.muteTool,      description: t.muteToolDesc,     Icon: VolumeX        },
     { id: 'reblock',   label: t.reblockTool,   description: t.reblockToolDesc,  Icon: RefreshCcw     },
