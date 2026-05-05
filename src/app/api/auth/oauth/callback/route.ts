@@ -29,11 +29,13 @@ export async function GET(req: NextRequest) {
       throw new Error(`OAuth returned invalid DID: ${did}`);
     }
 
-    // Resolve DID → handle via the public Bluesky AppView (no auth required).
+    // Resolve DID → handle via the public Bluesky AppView first (fast, cached).
     // We deliberately avoid client.restore() here: the freshly-stored OAuth
     // session is occasionally not yet readable in the same request, causing
-    // silent failures. The public endpoint is more reliable and sufficient
-    // since handle resolution is a public operation.
+    // silent failures.
+    // Fallback: AT Protocol PLC directory — protocol-layer identity resolution,
+    // not subject to Bluesky app-level visibility settings (e.g. "require sign-in
+    // to see content"), so it works even for restricted profiles.
     let handle = '';
     try {
       const profileRes = await fetch(
@@ -45,7 +47,23 @@ export async function GET(req: NextRequest) {
         handle = profileData.handle ?? '';
       }
     } catch {
-      // best-effort; DID-only match will still work for returning users
+      // fall through to PLC directory
+    }
+
+    // PLC directory fallback for did:plc: identities (covers restricted profiles)
+    if (!handle && did.startsWith('did:plc:')) {
+      try {
+        const plcRes = await fetch(`https://plc.directory/${encodeURIComponent(did)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (plcRes.ok) {
+          const plcDoc = await plcRes.json() as { alsoKnownAs?: string[] };
+          const atUri = plcDoc.alsoKnownAs?.find((a: string) => a.startsWith('at://'));
+          if (atUri) handle = atUri.replace('at://', '');
+        }
+      } catch {
+        // best-effort; DID-only match will still work for returning users
+      }
     }
 
     // 1. Try to find an existing account by DID
