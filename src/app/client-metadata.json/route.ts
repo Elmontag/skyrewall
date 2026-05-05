@@ -17,17 +17,19 @@ export async function GET() {
 
   const clientId = isLocalhost ? 'http://localhost' : `${appUrl}/client-metadata.json`;
 
-  // RFC 8252 §8.3: loopback redirects must use 127.0.0.1, not "localhost"
-  const redirectBase = isLocalhost
-    ? appUrl.replace(/^http:\/\/localhost/, 'http://127.0.0.1')
-    : appUrl;
+  // RFC 8252 §8.3: loopback redirects must use 127.0.0.1, not "localhost".
+  // For http://localhost client_id, only root-path URIs are accepted by the
+  // auth server, so the middleware at /middleware.ts forwards to the API handler.
+  const redirectUri = isLocalhost
+    ? appUrl.replace(/^http:\/\/localhost/, 'http://127.0.0.1') + '/'
+    : `${appUrl}/api/auth/oauth/callback`;
 
   const metadata = {
     client_id: clientId,
     client_name: 'SkyreWall',
     client_uri: appUrl,
-    redirect_uris: [`${redirectBase}/api/auth/oauth/callback`],
-    scope: 'atproto transition:generic',
+    redirect_uris: [redirectUri],
+    scope: 'atproto',
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',

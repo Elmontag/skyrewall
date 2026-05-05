@@ -83,17 +83,20 @@ export function getOAuthClient(): NodeOAuthClient {
   // RFC 8252 §8.3: loopback redirect URIs must use 127.0.0.1, not the
   // "localhost" hostname. The @atproto/oauth-client library enforces this
   // via Zod validation and rejects "localhost" in redirect_uris.
-  const redirectBase = isLocalhost
-    ? appUrl.replace(/^http:\/\/localhost/, 'http://127.0.0.1')
-    : appUrl;
+  // Additionally, the bsky.social auth server only accepts root-path
+  // loopback URIs (no sub-path) for the http://localhost client_id.
+  // The middleware at src/middleware.ts forwards /?code&state to the real handler.
+  const redirectUri = isLocalhost
+    ? appUrl.replace(/^http:\/\/localhost/, 'http://127.0.0.1') + '/'
+    : `${appUrl}/api/auth/oauth/callback`;
 
   _client = new NodeOAuthClient({
     clientMetadata: {
       client_id: clientId,
       client_name: 'SkyreWall',
       client_uri: appUrl,
-      redirect_uris: [`${redirectBase}/api/auth/oauth/callback`],
-      scope: 'atproto transition:generic',
+      redirect_uris: [redirectUri],
+      scope: 'atproto',
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
