@@ -137,7 +137,7 @@ export default function FollowerList({
             return (
               <label
                 key={follower.did}
-                className={`flex items-center gap-2.5 p-2.5 rounded-xl transition-all ${isProtected ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${wasActioned && !hideActioned ? 'opacity-60' : ''}`}
+                className={`relative flex items-center gap-2.5 p-2.5 rounded-xl transition-all ${isProtected ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${wasActioned && !hideActioned ? 'opacity-60' : ''}`}
                 style={{
                   backgroundColor: isSelected ? 'var(--accent-muted)' : isMutual ? 'rgba(34,197,94,0.08)' : wasActioned ? 'rgba(120,120,120,0.08)' : 'var(--bg-dark)',
                   border: `1px solid ${isSelected ? 'var(--accent)' : isMutual ? 'rgba(34,197,94,0.25)' : wasActioned ? 'rgba(120,120,120,0.2)' : 'transparent'}`,
