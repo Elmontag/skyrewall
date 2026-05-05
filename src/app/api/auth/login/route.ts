@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { decrypt, encrypt, signSession } from '@/lib/encryption';
-import { BskyAgent } from '@atproto/api';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { parseSession } from '@/lib/session';
 import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
-import { rejectCrossOrigin } from '@/lib/request-security';
+import { rejectCrossOrigin, getClientIp } from '@/lib/request-security';
+import { createAgent } from '@/lib/bluesky';
 
-const AUTH_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
+// Per-IP limit: guards against distributed brute-force
+const IP_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
+// Per-handle limit: prevents brute-force against a specific account even if the IP limit
+// is bypassed via X-Forwarded-For spoofing
+const HANDLE_RATE_LIMIT = { limit: 5, windowMs: 15 * 60 * 1000 }; // 5 req / 15 min
 
 interface UserRow {
   id: string;
@@ -37,14 +41,14 @@ export async function POST(req: NextRequest) {
   const originRejection = rejectCrossOrigin(req);
   if (originRejection) return originRejection;
 
-  // Rate limiting by IP
-  const headerStore = await headers();
-  const ip = headerStore.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown';
-  const rl = checkRateLimit(`login:${ip}`, AUTH_RATE_LIMIT.limit, AUTH_RATE_LIMIT.windowMs);
-  if (!rl.allowed) {
+  // First line: rate-limit by IP (note: X-Forwarded-For can be spoofed without a
+  // trusted proxy; the per-handle limit below is the defence against brute-force)
+  const ip = getClientIp(req);
+  const ipRl = checkRateLimit(`login:ip:${ip}`, IP_RATE_LIMIT.limit, IP_RATE_LIMIT.windowMs);
+  if (!ipRl.allowed) {
     return NextResponse.json(
       { error: 'Too many login attempts. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      { status: 429, headers: { 'Retry-After': String(ipRl.retryAfter) } }
     );
   }
 
@@ -52,6 +56,20 @@ export async function POST(req: NextRequest) {
     const { handle, password } = await req.json();
     if (!handle || !password) {
       return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
+    }
+
+    // Second line: rate-limit by handle — prevents brute-force of a specific account
+    // even if the IP check is bypassed via header spoofing
+    const handleRl = checkRateLimit(
+      `login:handle:${String(handle).toLowerCase()}`,
+      HANDLE_RATE_LIMIT.limit,
+      HANDLE_RATE_LIMIT.windowMs
+    );
+    if (!handleRl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(handleRl.retryAfter) } }
+      );
     }
 
     const rows = await query<UserRow>(
@@ -65,9 +83,8 @@ export async function POST(req: NextRequest) {
 
     const user = rows[0];
 
-    // Verify password against BlueSky (BlueSky auth is the source of truth)
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
-    await agent.login({ identifier: handle, password });
+    // Verify password against the user's actual PDS (source of truth)
+    const agent = await createAgent(handle, password);
 
     // If the stored password differs (e.g. user rotated their BlueSky app-password),
     // update it silently — BlueSky login above is the source of truth.

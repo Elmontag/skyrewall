@@ -44,8 +44,51 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+/**
+ * Resolves a handle or DID to the user's actual PDS service URL.
+ * Uses the Bluesky relay for handle→DID resolution, then the PLC directory
+ * or did:web well-known for DID→PDS resolution.
+ * Falls back to https://bsky.social on any error.
+ */
+export async function resolvePdsUrl(handleOrDid: string): Promise<string> {
+  try {
+    let did: string;
+
+    if (handleOrDid.startsWith('did:')) {
+      did = handleOrDid;
+    } else {
+      const res = await fetch(
+        `https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handleOrDid)}`
+      );
+      if (!res.ok) return 'https://bsky.social';
+      ({ did } = (await res.json()) as { did: string });
+    }
+
+    let didDocUrl: string;
+    if (did.startsWith('did:plc:')) {
+      didDocUrl = `https://plc.directory/${did}`;
+    } else if (did.startsWith('did:web:')) {
+      const domain = did.slice('did:web:'.length);
+      didDocUrl = `https://${domain}/.well-known/did.json`;
+    } else {
+      return 'https://bsky.social';
+    }
+
+    const docRes = await fetch(didDocUrl);
+    if (!docRes.ok) return 'https://bsky.social';
+    const doc = (await docRes.json()) as { service?: { id: string; serviceEndpoint: string }[] };
+
+    const pds = doc.service?.find((s) => s.id === '#atproto_pds');
+    if (pds?.serviceEndpoint) return pds.serviceEndpoint;
+  } catch {
+    // Fall through to default
+  }
+  return 'https://bsky.social';
+}
+
 export async function createAgent(handle: string, password: string): Promise<BskyAgent> {
-  const agent = new BskyAgent({ service: 'https://bsky.social' });
+  const service = await resolvePdsUrl(handle);
+  const agent = new BskyAgent({ service });
   await agent.login({ identifier: handle, password });
   return agent;
 }

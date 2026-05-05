@@ -17,11 +17,16 @@ export async function GET() {
 
   const clientId = isLocalhost ? 'http://localhost' : `${appUrl}/client-metadata.json`;
 
+  // RFC 8252 §8.3: loopback redirects must use 127.0.0.1, not "localhost"
+  const redirectBase = isLocalhost
+    ? appUrl.replace(/^http:\/\/localhost/, 'http://127.0.0.1')
+    : appUrl;
+
   const metadata = {
     client_id: clientId,
     client_name: 'SkyreWall',
     client_uri: appUrl,
-    redirect_uris: [`${appUrl}/api/auth/oauth/callback`],
+    redirect_uris: [`${redirectBase}/api/auth/oauth/callback`],
     scope: 'atproto transition:generic',
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],

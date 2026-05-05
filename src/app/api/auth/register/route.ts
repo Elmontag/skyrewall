@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { encrypt, signSession } from '@/lib/encryption';
-import { BskyAgent } from '@atproto/api';
-import { headers } from 'next/headers';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
-import { rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { rejectCrossOrigin, sanitizeError, getClientIp } from '@/lib/request-security';
+import { createAgent } from '@/lib/bluesky';
 
-const AUTH_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
+// Per-IP limit: guards against distributed brute-force
+const IP_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 };
+// Per-handle limit: prevents brute-force even if IP limit is bypassed via header spoofing
+const HANDLE_RATE_LIMIT = { limit: 5, windowMs: 15 * 60 * 1000 };
 
 interface UserRow {
   id: string;
@@ -18,14 +20,13 @@ export async function POST(req: NextRequest) {
   const originRejection = rejectCrossOrigin(req);
   if (originRejection) return originRejection;
 
-  // Rate limiting by IP
-  const headerStore = await headers();
-  const ip = headerStore.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown';
-  const rl = checkRateLimit(`register:${ip}`, AUTH_RATE_LIMIT.limit, AUTH_RATE_LIMIT.windowMs);
-  if (!rl.allowed) {
+  // First line: rate-limit by IP
+  const ip = getClientIp(req);
+  const ipRl = checkRateLimit(`register:ip:${ip}`, IP_RATE_LIMIT.limit, IP_RATE_LIMIT.windowMs);
+  if (!ipRl.allowed) {
     return NextResponse.json(
       { error: 'Too many registration attempts. Please try again later.' },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+      { status: 429, headers: { 'Retry-After': String(ipRl.retryAfter) } }
     );
   }
 
@@ -35,9 +36,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
     }
 
-    // Verify BlueSky credentials first
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
-    await agent.login({ identifier: handle, password });
+    // Second line: rate-limit by handle
+    const handleRl = checkRateLimit(
+      `register:handle:${String(handle).toLowerCase()}`,
+      HANDLE_RATE_LIMIT.limit,
+      HANDLE_RATE_LIMIT.windowMs
+    );
+    if (!handleRl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(handleRl.retryAfter) } }
+      );
+    }
+
+    // Verify credentials against the user's actual PDS
+    const agent = await createAgent(handle, password);
 
     const encryptedPassword = encrypt(password);
     const sessionDid = agent.session?.did ?? null;

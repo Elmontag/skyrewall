@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId } from '@/lib/session';
-import { fetchBlockedByFromClearSky, enrichProfileBatch } from '@/lib/bluesky';
+import { fetchBlockedByFromClearSky, enrichProfileBatch, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_RESULTS = 5000;
@@ -50,8 +49,7 @@ export async function POST(req: NextRequest) {
           // Enrich with profile data if credentials are available
           let blockers;
           if (password) {
-            const agent = new BskyAgent({ service: 'https://bsky.social' });
-            await agent.login({ identifier: handle, password });
+            const agent = await createAgent(handle, password);
             blockers = await enrichProfileBatch(agent, blockerDids);
           } else {
             blockers = blockerDids.map((did) => ({ did, handle: did }));

@@ -2,9 +2,9 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { encrypt, decrypt } from '@/lib/encryption';
-import { BskyAgent } from '@atproto/api';
 import { getSessionUserId } from '@/lib/session';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createAgent } from '@/lib/bluesky';
 
 interface UserRow {
   id: string;
@@ -71,14 +71,13 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
 
     if (body.handle) {
       const newHandle: string = body.handle.trim();
       if (user.encrypted_password) {
-        // App-password users: verify new handle with stored password
+        // App-password users: verify new handle with stored password against the user's PDS
         const currentPassword = decrypt(user.encrypted_password);
-        await agent.login({ identifier: newHandle, password: currentPassword });
+        await createAgent(newHandle, currentPassword);
       }
       // OAuth-only users: handle update accepted without password verification
       // (they proved identity via OAuth; handle is informational for display)
@@ -102,8 +101,8 @@ export async function PATCH(req: NextRequest) {
         );
       }
       const newPassword: string = body.password.trim();
-      // Verify current handle with new password
-      await agent.login({ identifier: user.handle, password: newPassword });
+      // Verify current handle with new password against the user's PDS
+      await createAgent(user.handle, newPassword);
       const encryptedPassword = encrypt(newPassword);
       await query('UPDATE users SET encrypted_password = $1 WHERE id = $2', [encryptedPassword, user.id]);
       return NextResponse.json({ success: true, updated: 'password' });
