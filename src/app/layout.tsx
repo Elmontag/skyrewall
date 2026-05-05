@@ -13,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)' }}>
+      <body className="h-dvh overflow-hidden" style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)' }}>
         {children}
       </body>
     </html>

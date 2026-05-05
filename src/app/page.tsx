@@ -73,7 +73,7 @@ export default function Home() {
   const activeTab = allTabs.find((tb) => tb.id === tab)!;
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ backgroundColor: 'var(--bg-dark)' }}>
+    <div className="h-dvh flex overflow-hidden" style={{ backgroundColor: 'var(--bg-dark)' }}>
 
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -84,9 +84,8 @@ export default function Home() {
         />
       )}
 
-      {/* Sidebar */}
       <aside
-        className={`fixed md:sticky top-0 z-30 h-screen flex flex-col transition-transform duration-200
+        className={`fixed md:sticky top-0 z-30 h-dvh flex flex-col transition-transform duration-200
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
         style={{
           width: '240px',
@@ -96,7 +95,7 @@ export default function Home() {
         }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5" style={{ borderBottom: '1px solid var(--bg-border)' }}>
+        <div className="flex-shrink-0 flex items-center gap-3 px-5 py-5" style={{ borderBottom: '1px solid var(--bg-border)' }}>
           <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
             style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
             <Shield size={16} strokeWidth={2.5} />
@@ -109,87 +108,90 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Nav - main tools */}
-        <nav className="px-3 py-4 flex flex-col gap-1" style={{ borderBottom: '1px solid var(--bg-border)' }}>
-          {mainTabs.map(({ id, label, Icon }) => {
-            const active = tab === id;
-            return (
+        {/* Scrollable middle: main nav + spacer + account nav */}
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+          {/* Nav - main tools */}
+          <nav className="px-3 py-4 flex flex-col gap-1" style={{ borderBottom: '1px solid var(--bg-border)' }}>
+            {mainTabs.map(({ id, label, Icon }) => {
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => { setTab(id); setSidebarOpen(false); }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
+                  style={{
+                    backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
+                    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                    border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
+                  }}
+                >
+                  <Icon size={17} strokeWidth={active ? 2.5 : 2} />
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Nav - account area */}
+          <nav className="px-3 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid var(--bg-border)' }}>
+            <div className="px-3 pb-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
+                {t.account}
+              </span>
+            </div>
+            {loggedIn === false ? (
+              /* Not logged in: single login button */
               <button
-                key={id}
-                onClick={() => { setTab(id); setSidebarOpen(false); }}
+                onClick={() => { setTab('account'); setSidebarOpen(false); }}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
                 style={{
-                  backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                  border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
+                  backgroundColor: tab === 'account' ? 'var(--accent-muted)' : 'transparent',
+                  color: tab === 'account' ? 'var(--accent)' : 'var(--text-secondary)',
+                  border: tab === 'account' ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
                 }}
               >
-                <Icon size={17} strokeWidth={active ? 2.5 : 2} />
-                {label}
+                <LogIn size={17} strokeWidth={2} />
+                {t.login}
               </button>
-            );
-          })}
-        </nav>
+            ) : (
+              /* Logged in: all 3 account tabs + logout */
+              <>
+                {accountTabs.map(({ id, label, Icon }) => {
+                  const active = tab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => { setTab(id); setSidebarOpen(false); }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
+                      style={{
+                        backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
+                        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                        border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
+                      }}
+                    >
+                      <Icon size={17} strokeWidth={active ? 2.5 : 2} />
+                      {label}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={handleSidebarLogout}
+                  className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all text-left w-full mt-1"
+                  style={{ color: 'var(--danger)', border: '1px solid transparent' }}
+                >
+                  <LogOut size={15} strokeWidth={2} />
+                  {t.logout}
+                </button>
+              </>
+            )}
+          </nav>
+        </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Nav - account area */}
-        <nav className="px-3 py-3 flex flex-col gap-1" style={{ borderTop: '1px solid var(--bg-border)' }}>
-          <div className="px-3 pb-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
-              {t.account}
-            </span>
-          </div>
-          {loggedIn === false ? (
-            /* Not logged in: single login button */
-            <button
-              onClick={() => { setTab('account'); setSidebarOpen(false); }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
-              style={{
-                backgroundColor: tab === 'account' ? 'var(--accent-muted)' : 'transparent',
-                color: tab === 'account' ? 'var(--accent)' : 'var(--text-secondary)',
-                border: tab === 'account' ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
-              }}
-            >
-              <LogIn size={17} strokeWidth={2} />
-              {t.login}
-            </button>
-          ) : (
-            /* Logged in: all 3 account tabs + logout */
-            <>
-              {accountTabs.map(({ id, label, Icon }) => {
-                const active = tab === id;
-                return (
-                  <button
-                    key={id}
-                    onClick={() => { setTab(id); setSidebarOpen(false); }}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full"
-                    style={{
-                      backgroundColor: active ? 'var(--accent-muted)' : 'transparent',
-                      color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                      border: active ? '1px solid rgba(0,133,255,0.2)' : '1px solid transparent',
-                    }}
-                  >
-                    <Icon size={17} strokeWidth={active ? 2.5 : 2} />
-                    {label}
-                  </button>
-                );
-              })}
-              <button
-                onClick={handleSidebarLogout}
-                className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all text-left w-full mt-1"
-                style={{ color: 'var(--danger)', border: '1px solid transparent' }}
-              >
-                <LogOut size={15} strokeWidth={2} />
-                {t.logout}
-              </button>
-            </>
-          )}
-        </nav>
-
-        {/* Bottom controls */}
-        <div className="px-3 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--bg-border)' }}>
+        {/* Bottom controls - always visible */}
+        <div className="flex-shrink-0 px-3 py-4 flex flex-col gap-2" style={{ borderTop: '1px solid var(--bg-border)' }}>
           {/* Ko-fi */}
           <a
             href="https://ko-fi.com/elmontag"
@@ -239,15 +241,15 @@ export default function Home() {
         </header>
 
         {/* Tool header */}
-        <div className="px-6 pt-8 pb-6" style={{ borderBottom: '1px solid var(--bg-border)' }}>
-        <div className="flex items-center gap-4 mx-auto"
+        <div className="px-4 pt-4 pb-4 md:px-6 md:pt-8 md:pb-6" style={{ borderBottom: '1px solid var(--bg-border)' }}>
+        <div className="flex items-center gap-3 md:gap-4 mx-auto"
             style={{ maxWidth: ['home', 'block', 'mute', 'reblock', 'postblock'].includes(tab) ? '1200px' : '672px' }}>
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
-              <activeTab.Icon size={22} strokeWidth={2} />
+              <activeTab.Icon size={20} strokeWidth={2} />
             </div>
             <div>
-              <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              <h1 className="text-lg md:text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                 {activeTab.label}
               </h1>
               <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
@@ -258,7 +260,7 @@ export default function Home() {
         </div>
 
         {/* Content */}
-        <main className="flex-1 px-6 py-7 w-full mx-auto"
+        <main className="flex-1 px-4 py-4 md:px-6 md:py-7 w-full mx-auto"
           style={{ maxWidth: ['home', 'block', 'mute', 'reblock', 'postblock'].includes(tab) ? '1200px' : '672px' }}>
           {notice && (
             <div className="mb-4 px-4 py-3 rounded-xl text-sm"
