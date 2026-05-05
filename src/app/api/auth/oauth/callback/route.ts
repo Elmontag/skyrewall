@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Agent } from '@atproto/api';
 import { deleteOAuthSession, getOAuthClient } from '@/lib/oauth-client';
 import { query } from '@/lib/db';
 import { decrypt, signSession } from '@/lib/encryption';
@@ -30,15 +29,23 @@ export async function GET(req: NextRequest) {
       throw new Error(`OAuth returned invalid DID: ${did}`);
     }
 
-    // Restore the OAuth session to get an agent for profile lookup
+    // Resolve DID → handle via the public Bluesky AppView (no auth required).
+    // We deliberately avoid client.restore() here: the freshly-stored OAuth
+    // session is occasionally not yet readable in the same request, causing
+    // silent failures. The public endpoint is more reliable and sufficient
+    // since handle resolution is a public operation.
     let handle = '';
     try {
-      const oauthSession = await client.restore(did);
-      const agent = new Agent(oauthSession);
-      const profile = await agent.getProfile({ actor: did });
-      handle = profile.data.handle ?? '';
+      const profileRes = await fetch(
+        `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      if (profileRes.ok) {
+        const profileData = await profileRes.json() as { handle?: string };
+        handle = profileData.handle ?? '';
+      }
     } catch {
-      // Handle lookup is best-effort; fall back to empty string (DID-only match will still work)
+      // best-effort; DID-only match will still work for returning users
     }
 
     // 1. Try to find an existing account by DID
