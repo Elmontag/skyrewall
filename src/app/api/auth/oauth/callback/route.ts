@@ -103,7 +103,16 @@ export async function GET(req: NextRequest) {
       JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) })
     );
 
-    const response = NextResponse.redirect(`${appUrl}/?tab=account`);
+    // Return a 200 HTML meta-refresh instead of a 302 redirect so that
+    // the Set-Cookie header is reliably forwarded by reverse proxies (e.g.
+    // Nginx Proxy Manager). Some proxies silently drop Set-Cookie on 3xx
+    // redirect responses.
+    const safeUrl = `${appUrl}/?tab=account`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"></head><body></body></html>`;
+    const response = new NextResponse(html, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
     response.cookies.set('session', sessionData, {
       ...sessionCookieOptions,
       maxAge: SESSION_MAX_AGE_SECONDS,
