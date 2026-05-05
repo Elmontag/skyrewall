@@ -138,7 +138,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: loginHandle, password: loginPassword }),
+        body: JSON.stringify({ handle: loginHandle, password: loginPassword, privacyAccepted: true }),
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -171,7 +171,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       const res = await fetch('/api/auth/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: loginHandle.trim() || undefined }),
+        body: JSON.stringify({ handle: loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
       });
       if (res.ok) {
         const { redirectUrl } = await res.json();

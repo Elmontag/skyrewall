@@ -9,15 +9,19 @@ function isPrivateIpv4(ip: string): boolean {
     return true;
   }
 
-  const [a, b] = parts;
+  const [a, b, c] = parts;
   return (
     a === 0 ||
     a === 10 ||
     a === 127 ||
-    (a === 169 && b === 254) ||
+    (a === 100 && b >= 64 && b <= 127) || // RFC 6598 Carrier-Grade NAT
+    (a === 169 && b === 254) || // link-local
     (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0 && c === 0) || // RFC 6890 IETF protocol assignments
+    (a === 192 && b === 0 && c === 2) || // TEST-NET-1
     (a === 192 && b === 168) ||
-    a >= 224
+    (a === 198 && b >= 18 && b <= 19) || // benchmarking
+    a >= 224 // multicast + reserved
   );
 }
 
@@ -31,7 +35,8 @@ function isPrivateIpv6(ip: string): boolean {
     normalized === '::1' ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
-    normalized.startsWith('fe80:')
+    normalized.startsWith('fe80:') ||
+    normalized.startsWith('ff') // multicast (ff00::/8)
   );
 }
 

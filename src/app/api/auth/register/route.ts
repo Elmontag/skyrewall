@@ -31,9 +31,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { handle, password } = await req.json();
+    const { handle, password, privacyAccepted } = await req.json();
     if (!handle || !password) {
       return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
+    }
+    if (!privacyAccepted) {
+      return NextResponse.json({ error: 'Privacy policy acceptance is required' }, { status: 400 });
     }
 
     // Second line: rate-limit by handle

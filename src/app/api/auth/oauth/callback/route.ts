@@ -80,6 +80,15 @@ export async function GET(req: NextRequest) {
       if (!handle) {
         throw new Error('Could not retrieve Bluesky handle from profile. Please try again.');
       }
+      // Privacy policy must have been accepted at OAuth start time for new registrations.
+      const consentCookie = req.cookies.get('oauth_reg_consent');
+      if (!consentCookie || consentCookie.value !== '1') {
+        await deleteOAuthSession(did);
+        const errorUrl = `${appUrl}/?tab=account&oauth_error=consent`;
+        const noConsentResponse = NextResponse.redirect(errorUrl);
+        noConsentResponse.cookies.delete('oauth_reg_consent');
+        return noConsentResponse;
+      }
       // Create a new account for this OAuth user (no app-password)
       const created = await query<UserRow>(
         `INSERT INTO users (handle, did, encrypted_password)
@@ -99,6 +108,7 @@ export async function GET(req: NextRequest) {
       ...sessionCookieOptions,
       maxAge: SESSION_MAX_AGE_SECONDS,
     });
+    response.cookies.delete('oauth_reg_consent');
     return response;
   } catch (err) {
     console.error('[oauth/callback] error:', sanitizeError(err));

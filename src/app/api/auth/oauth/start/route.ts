@@ -20,6 +20,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     // Optional handle: used for PAR (Pushed Authorization Requests) to pre-select the user's PDS
     const handle: string | undefined = body.handle?.trim() || undefined;
+    // privacyAccepted: required for new-account OAuth registrations; stored in a short-lived
+    // cookie so the callback can enforce consent before creating an account.
+    const privacyAccepted: boolean = body.privacyAccepted === true;
     if (handle) {
       const handleRl = checkRateLimit(`oauth-start:handle:${handle.toLowerCase()}`, 5, 15 * 60 * 1000);
       if (!handleRl.allowed) {
@@ -35,7 +38,19 @@ export async function POST(req: NextRequest) {
       scope: 'atproto',
     });
 
-    return NextResponse.json({ redirectUrl: url.toString() });
+    const response = NextResponse.json({ redirectUrl: url.toString() });
+    // Carry privacy consent through the OAuth redirect so the callback can
+    // enforce it before creating a brand-new account (re-login never creates accounts).
+    if (privacyAccepted) {
+      response.cookies.set('oauth_reg_consent', '1', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 10 * 60, // 10 minutes — enough for the OAuth round-trip
+        path: '/',
+      });
+    }
+    return response;
   } catch (err) {
     console.error('[oauth/start] error:', sanitizeError(err));
     return NextResponse.json({ error: 'Failed to initiate OAuth flow.' }, { status: 500 });
