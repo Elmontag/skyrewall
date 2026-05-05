@@ -13,6 +13,10 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-60}
+      # Required for AT Protocol OAuth (Sign in with Bluesky).
+      # Set to the public HTTPS URL of your deployment, e.g. https://skyrewall.example.com
+      # Leave empty or omit to disable OAuth (app-password login still works).
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

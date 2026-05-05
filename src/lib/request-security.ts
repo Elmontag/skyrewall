@@ -8,6 +8,13 @@ type RateLimitConfig = {
   windowMs: number;
 };
 
+/**
+ * Returns the client IP from X-Forwarded-For / X-Real-IP headers.
+ * NOTE: X-Forwarded-For can be spoofed by clients unless a trusted reverse
+ * proxy (Nginx, Traefik, …) strips/overwrites the header before it reaches
+ * the app. Use per-handle rate limiting in addition to per-IP limiting for
+ * sensitive endpoints.
+ */
 export function getClientIp(req: NextRequest): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip')

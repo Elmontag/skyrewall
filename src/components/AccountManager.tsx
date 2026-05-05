@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut } from 'lucide-react';
+import { AlertTriangle, Check, RefreshCw, Trash2, KeyRound, AtSign, LogOut, LogIn, ArrowLeft, ArrowRight, RefreshCcw } from 'lucide-react';
 import type { Translations } from '@/i18n/en';
 
 interface Props {
@@ -10,7 +10,8 @@ interface Props {
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-type AuthStep = 'login' | 'register' | 'dashboard';
+type AuthStep = 'identity' | 'password' | 'dashboard';
+type AuthMode = 'login' | 'register';
 
 function useUpdateField(field: 'handle' | 'password') {
   const [value, setValue] = useState('');
@@ -46,8 +47,11 @@ function useUpdateField(field: 'handle' | 'password') {
 }
 
 export default function AccountManager({ t, onLogin, onLogout }: Props) {
-  const [authStep, setAuthStep] = useState<AuthStep>('login');
+  const [authStep, setAuthStep] = useState<AuthStep>('identity');
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [currentHandle, setCurrentHandle] = useState<string | null>(null);
+  const [isOAuthUser, setIsOAuthUser] = useState(false);
+  const [oauthErrorSince, setOauthErrorSince] = useState<string | null>(null);
   const [loginHandle, setLoginHandle] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
@@ -55,6 +59,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
   const [authLoading, setAuthLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   const handleField = useUpdateField('handle');
   const passwordField = useUpdateField('password');
@@ -65,13 +70,27 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
         if (r.ok) {
           const data = await r.json();
           setCurrentHandle(data.user?.handle ?? null);
+          setIsOAuthUser(data.user?.isOAuth ?? false);
+          setOauthErrorSince(data.user?.oauthErrorSince ?? null);
           setAuthStep('dashboard');
         } else {
-          setAuthStep('login');
+          setAuthStep('identity');
         }
       })
-      .catch(() => setAuthStep('login'))
+      .catch(() => setAuthStep('identity'))
       .finally(() => setLoading(false));
+
+    // Detect OAuth callback errors redirected back with ?oauth_error=1
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('oauth_error') === '1') {
+        setAuthError(t.oauthErrorDesc);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('oauth_error');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogin = async () => {
@@ -119,7 +138,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: loginHandle, password: loginPassword }),
+        body: JSON.stringify({ handle: loginHandle, password: loginPassword, privacyAccepted: true }),
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -140,9 +159,32 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
 
   const handleLogout = async () => {
     await fetch('/api/auth/login', { method: 'DELETE' });
-    setAuthStep('login');
+    setAuthStep('identity');
     setCurrentHandle(null);
     onLogout?.();
+  };
+
+  const handleOAuthLogin = async () => {
+    setOauthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth/oauth/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
+      });
+      if (res.ok) {
+        const { redirectUrl } = await res.json();
+        window.location.href = redirectUrl;
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.error || t.oauthErrorDesc);
+        setOauthLoading(false);
+      }
+    } catch {
+      setAuthError(t.errorNetwork);
+      setOauthLoading(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -151,7 +193,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
     try {
       const res = await fetch('/api/account', { method: 'DELETE' });
       if (res.ok) {
-        setAuthStep('login');
+        setAuthStep('identity');
         setCurrentHandle(null);
         onLogout?.();
       } else {
@@ -173,83 +215,223 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
     );
   }
 
-  if (authStep === 'login' || authStep === 'register') {
-    const isRegister = authStep === 'register';
+  if (authStep === 'identity' || authStep === 'password') {
+    const isRegister = authMode === 'register';
+    const stepIndex = authStep === 'identity' ? 0 : 1;
+    const stepLabels = [t.authStep1Label, t.authStep2Label];
+
     return (
-      <div className="rounded-2xl p-6 flex flex-col gap-5 max-w-sm mx-auto" style={card}>
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {isRegister ? t.registerTitle : t.loginTitle}
-          </h2>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {t.subscribeDesc}
-          </p>
+      <div className="flex flex-col gap-5 max-w-sm mx-auto w-full">
+        {/* Step indicator */}
+        <div className="flex items-center gap-0">
+          {stepLabels.map((label, i) => {
+            const active = stepIndex === i;
+            const done = stepIndex > i;
+            return (
+              <div key={i} className="flex items-center flex-1 last:flex-none">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-all"
+                    style={{
+                      backgroundColor: done ? 'var(--success)' : active ? 'var(--accent)' : 'var(--bg-border)',
+                      color: done || active ? '#fff' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {done ? <Check size={12} strokeWidth={3} /> : i + 1}
+                  </div>
+                  <span className="text-xs hidden sm:block" style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                    {label}
+                  </span>
+                </div>
+                {i < stepLabels.length - 1 && (
+                  <div className="flex-1 h-px mx-3" style={{ backgroundColor: done ? 'var(--success)' : 'var(--bg-border)' }} />
+                )}
+              </div>
+            );
+          })}
         </div>
-        {authError && (
-          <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
-            style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}>
-            <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {authError}
-          </div>
-        )}
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
-            <input
-              type="text" value={loginHandle} onChange={(e) => setLoginHandle(e.target.value)}
-              placeholder={t.handlePlaceholder}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
-            <input
-              type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (isRegister ? handleRegister() : handleLogin())}
-              placeholder={t.appPasswordPlaceholder}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={inputStyle}
-            />
-          </div>
-        </div>
-        {isRegister && (
-          <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl transition-all"
-            style={{ backgroundColor: privacyAccepted ? 'var(--accent-muted)' : 'var(--bg-dark)', border: `1px solid ${privacyAccepted ? 'var(--accent)' : 'var(--bg-border)'}` }}>
-            <input type="checkbox" checked={privacyAccepted} onChange={(e) => setPrivacyAccepted(e.target.checked)} className="sr-only" />
-            <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all"
-              style={{ borderColor: privacyAccepted ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: privacyAccepted ? 'var(--accent)' : 'transparent' }}>
-              {privacyAccepted && <Check size={10} strokeWidth={3} color="#fff" />}
+
+        <div className="rounded-2xl p-6 flex flex-col gap-5" style={card}>
+          {/* Mode toggle — only on step 1 */}
+          {authStep === 'identity' && (
+            <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid var(--bg-border)' }}>
+              {(['login', 'register'] as AuthMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => { setAuthMode(mode); setAuthError(''); setPrivacyAccepted(false); }}
+                  className="flex-1 py-2 text-sm font-semibold transition-all"
+                  style={{
+                    backgroundColor: authMode === mode ? 'var(--accent)' : 'transparent',
+                    color: authMode === mode ? '#fff' : 'var(--text-secondary)',
+                  }}
+                >
+                  {mode === 'login' ? t.login : t.register}
+                </button>
+              ))}
             </div>
-            <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-              {t.privacyPolicyAccept}{' '}
-              <a href="/datenschutz"
-                style={{ color: 'var(--accent)', textDecoration: 'underline' }} onClick={(e) => e.stopPropagation()}>
-                {t.privacyPolicyLink}
-              </a>
-              {t.privacyPolicyAcceptSuffix}
-            </span>
-          </label>
-        )}
-        <button
-          onClick={isRegister ? handleRegister : handleLogin}
-          disabled={authLoading}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-        >
-          {authLoading && <RefreshCw size={14} className="animate-spin" />}
-          {authLoading ? t.loading : (isRegister ? t.register : t.login)}
-        </button>
-        <button onClick={() => { setAuthStep(isRegister ? 'login' : 'register'); setAuthError(''); }}
-          className="text-sm text-center transition-colors"
-          style={{ color: 'var(--text-secondary)' }}>
-          {isRegister ? t.login : t.register} →
-        </button>
+          )}
+
+          {/* Title */}
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {authStep === 'identity'
+                ? (isRegister ? t.registerTitle : t.loginTitle)
+                : (isRegister ? t.registerStep2Title : t.loginStep2Title)}
+            </h2>
+          </div>
+
+          {/* Error */}
+          {authError && (
+            <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+              style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}>
+              <AlertTriangle size={14} strokeWidth={2} className="flex-shrink-0" /> {authError}
+            </div>
+          )}
+
+          {/* Step 1: Identity */}
+          {authStep === 'identity' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.handle}</label>
+                <input
+                  type="text" value={loginHandle} onChange={(e) => setLoginHandle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !isRegister && handleOAuthLogin()}
+                  placeholder={t.handlePlaceholder}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Privacy checkbox — register only, before buttons */}
+              {isRegister && (
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl transition-all"
+                  style={{ backgroundColor: privacyAccepted ? 'var(--accent-muted)' : 'var(--bg-dark)', border: `1px solid ${privacyAccepted ? 'var(--accent)' : 'var(--bg-border)'}` }}>
+                  <input type="checkbox" checked={privacyAccepted} onChange={(e) => setPrivacyAccepted(e.target.checked)} className="sr-only" />
+                  <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all"
+                    style={{ borderColor: privacyAccepted ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: privacyAccepted ? 'var(--accent)' : 'transparent' }}>
+                    {privacyAccepted && <Check size={10} strokeWidth={3} color="#fff" />}
+                  </div>
+                  <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    {t.privacyPolicyAccept}{' '}
+                    <a href="/datenschutz"
+                      style={{ color: 'var(--accent)', textDecoration: 'underline' }} onClick={(e) => e.stopPropagation()}>
+                      {t.privacyPolicyLink}
+                    </a>
+                    {t.privacyPolicyAcceptSuffix}
+                  </span>
+                </label>
+              )}
+
+              {/* OAuth button */}
+              <button
+                onClick={() => {
+                  if (isRegister && !privacyAccepted) {
+                    setAuthError(t.errorPrivacyRequired);
+                    return;
+                  }
+                  setAuthError('');
+                  handleOAuthLogin();
+                }}
+                disabled={oauthLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+              >
+                {oauthLoading
+                  ? <><RefreshCw size={14} className="animate-spin" /> {t.oauthConnecting}</>
+                  : (isRegister ? t.registerWithBluesky : t.loginWithBluesky)
+                }
+              </button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.orDivider}</span>
+                <div className="flex-1 h-px" style={{ backgroundColor: 'var(--bg-border)' }} />
+              </div>
+
+              {/* Continue with app password */}
+              <button
+                onClick={() => {
+                  if (isRegister && !privacyAccepted) {
+                    setAuthError(t.errorPrivacyRequired);
+                    return;
+                  }
+                  setAuthError('');
+                  setAuthStep('password');
+                }}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+                style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--bg-border)' }}
+              >
+                {t.continueWithPassword} <ArrowRight size={14} />
+              </button>
+            </>
+          )}
+
+          {/* Step 2: App Password */}
+          {authStep === 'password' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.appPassword}</label>
+                <input
+                  type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (isRegister ? handleRegister() : handleLogin())}
+                  placeholder={t.appPasswordPlaceholder}
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setAuthStep('identity'); setAuthError(''); setLoginPassword(''); }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex-shrink-0"
+                  style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
+                >
+                  <ArrowLeft size={14} /> {t.back}
+                </button>
+                <button
+                  onClick={isRegister ? handleRegister : handleLogin}
+                  disabled={authLoading}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+                >
+                  {authLoading && <RefreshCw size={14} className="animate-spin" />}
+                  {authLoading ? t.loading : (isRegister ? t.register : t.login)}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-5 max-w-lg">
+      {/* OAuth session expired warning */}
+      {isOAuthUser && oauthErrorSince && (
+        <div className="px-4 py-3 rounded-xl flex items-start gap-3"
+          style={{ backgroundColor: 'color-mix(in srgb, #f59e0b 10%, var(--bg-card))', border: '1px solid color-mix(in srgb, #f59e0b 35%, transparent)' }}>
+          <RefreshCcw size={15} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+          <div className="flex flex-col gap-2 min-w-0">
+            <div>
+              <span className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{t.oauthSessionExpiredTitle}</span>
+              <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{t.oauthSessionExpiredDesc}</p>
+            </div>
+            <button
+              onClick={handleOAuthLogin}
+              disabled={oauthLoading}
+              className="self-start flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-semibold transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#f59e0b', color: '#000' }}
+            >
+              {oauthLoading ? <RefreshCw size={12} className="animate-spin" /> : <LogIn size={12} />}
+              {oauthLoading ? t.oauthConnecting : t.oauthSessionReauthorize}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Current account */}
       {currentHandle && (
         <div className="px-4 py-3 rounded-xl flex items-center justify-between gap-3"
@@ -258,6 +440,10 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
             <AtSign size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <span className="text-sm font-mono font-medium truncate" style={{ color: 'var(--accent)' }}>
               {currentHandle}
+            </span>
+            <span className="px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+              style={{ backgroundColor: isOAuthUser ? 'rgba(0,133,255,0.12)' : 'rgba(120,120,120,0.12)', color: isOAuthUser ? 'var(--accent)' : 'var(--text-secondary)' }}>
+              {isOAuthUser ? t.authMethodOAuth : t.authMethodPassword}
             </span>
           </div>
           <button onClick={handleLogout}

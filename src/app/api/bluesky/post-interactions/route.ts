@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId } from '@/lib/session';
-import { fetchPostInteractors } from '@/lib/bluesky';
+import { fetchPostInteractors, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_RESULTS = 5000;
@@ -65,8 +65,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Credentials required' }, { status: 401 });
     }
 
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
-    await agent.login({ identifier: handle, password });
+    const agent = await createAgent(handle, password);
 
     const atUri = await resolvePostUri(agent, postUrl.trim());
 

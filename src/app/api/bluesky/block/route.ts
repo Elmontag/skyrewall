@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
-import { blockAccounts } from '@/lib/bluesky';
+import { blockAccounts, createAgent } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
@@ -47,8 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
-    await agent.login({ identifier: handle, password });
+    const agent = await createAgent(handle, password);
 
     const { succeeded, failed, succeededDids } = await blockAccounts(agent, dids);
 

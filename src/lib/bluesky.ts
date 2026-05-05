@@ -1,8 +1,11 @@
 import { BskyAgent } from '@atproto/api';
+import type { Agent } from '@atproto/api';
 import type { Follower } from '@/types';
 import { query } from '@/lib/db';
 import { logBlockEvents } from '@/lib/block-events';
 import { isValidDid } from '@/lib/session';
+import { createOAuthAgent } from '@/lib/oauth-client';
+import { assertPublicPdsHostname, didWebToDocumentUrl, validatePdsServiceEndpoint } from '@/lib/pds';
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
@@ -42,10 +45,69 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+/**
+ * Resolves a handle or DID to the user's actual PDS service URL.
+ * Uses the Bluesky relay for handle→DID resolution, then the PLC directory
+ * or did:web well-known for DID→PDS resolution.
+ * Fails closed when identity or PDS endpoint discovery cannot be verified so
+ * app-password credentials are never sent to an unintended fallback PDS.
+ */
+export async function resolvePdsUrl(handleOrDid: string): Promise<string> {
+  let did: string;
+
+  if (handleOrDid.startsWith('did:')) {
+    did = handleOrDid;
+  } else {
+    const res = await fetch(
+      `https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handleOrDid)}`,
+      { redirect: 'error', signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) throw new Error('Could not resolve Bluesky handle to a DID');
+    ({ did } = (await res.json()) as { did: string });
+  }
+
+  if (!isValidDid(did)) {
+    throw new Error('Resolved DID is invalid');
+  }
+
+  let didDocUrl: string;
+  if (did.startsWith('did:plc:')) {
+    didDocUrl = `https://plc.directory/${encodeURIComponent(did)}`;
+  } else if (did.startsWith('did:web:')) {
+    didDocUrl = didWebToDocumentUrl(did);
+  } else {
+    throw new Error('Unsupported DID method for PDS discovery');
+  }
+
+  const docRes = await fetch(didDocUrl, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!docRes.ok) throw new Error('Could not fetch DID document for PDS discovery');
+  const doc = (await docRes.json()) as { service?: { id: string; serviceEndpoint: string }[] };
+
+  const pds = doc.service?.find((s) => s.id === '#atproto_pds');
+  if (!pds?.serviceEndpoint) throw new Error('DID document does not declare an AT Protocol PDS');
+
+  const serviceEndpoint = validatePdsServiceEndpoint(pds.serviceEndpoint);
+  await assertPublicPdsHostname(serviceEndpoint);
+  return serviceEndpoint;
+}
+
 export async function createAgent(handle: string, password: string): Promise<BskyAgent> {
-  const agent = new BskyAgent({ service: 'https://bsky.social' });
+  const service = await resolvePdsUrl(handle);
+  const agent = new BskyAgent({ service });
   await agent.login({ identifier: handle, password });
   return agent;
+}
+
+/**
+ * Creates an agent for an OAuth user by restoring their stored session.
+ * Works with any AT Protocol PDS — service URL is discovered from the DID.
+ * Throws if the OAuth session is missing or cannot be refreshed.
+ */
+export async function createAgentForOAuth(did: string): Promise<Agent> {
+  return createOAuthAgent(did);
 }
 
 export async function fetchAllFollowers(
@@ -93,7 +155,8 @@ export async function blockAccounts(
   agent: BskyAgent,
   dids: string[],
   batchSize = 10,
-  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void
+  onProgress?: (done: number, total: number, succeeded: number, failed: number) => void,
+  repoDid?: string
 ): Promise<{ succeeded: number; failed: number; succeededDids: string[] }> {
   let succeeded = 0;
   let failed = 0;
@@ -104,10 +167,11 @@ export async function blockAccounts(
     await Promise.allSettled(
       batch.map(async (did) => {
         try {
-          if (!agent.session) throw new Error('No active session');
+          const repo = repoDid ?? agent.session?.did;
+          if (!repo) throw new Error('No active session');
           await withRetry(() =>
             agent.app.bsky.graph.block.create(
-              { repo: agent.session!.did },
+              { repo },
               { subject: did, createdAt: new Date().toISOString() }
             )
           );

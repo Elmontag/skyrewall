@@ -2,14 +2,16 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { encrypt, decrypt } from '@/lib/encryption';
-import { BskyAgent } from '@atproto/api';
 import { getSessionUserId } from '@/lib/session';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createAgent } from '@/lib/bluesky';
+import { createOAuthAgent, deleteOAuthSession } from '@/lib/oauth-client';
 
 interface UserRow {
   id: string;
   handle: string;
-  encrypted_password: string;
+  encrypted_password: string | null;
+  did: string | null;
 }
 
 async function getUser(): Promise<UserRow | null> {
@@ -17,7 +19,7 @@ async function getUser(): Promise<UserRow | null> {
   if (!userId) return null;
   try {
     const rows = await query<UserRow>(
-      'SELECT id, handle, encrypted_password FROM users WHERE id = $1',
+      'SELECT id, handle, encrypted_password, did FROM users WHERE id = $1',
       [userId]
     );
     return rows[0] ?? null;
@@ -47,6 +49,9 @@ export async function DELETE(req: NextRequest) {
   });
   if (limited) return limited;
 
+  if (user.did) {
+    await deleteOAuthSession(user.did);
+  }
   await query('DELETE FROM users WHERE id = $1', [user.id]);
 
   const response = NextResponse.json({ success: true });
@@ -71,13 +76,26 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const currentPassword = decrypt(user.encrypted_password);
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
 
     if (body.handle) {
       const newHandle: string = body.handle.trim();
-      // Verify new handle with current stored password — acts as ownership proof
-      await agent.login({ identifier: newHandle, password: currentPassword });
+      if (user.encrypted_password) {
+        // App-password users: verify new handle with stored password against the user's PDS
+        const currentPassword = decrypt(user.encrypted_password);
+        await createAgent(newHandle, currentPassword);
+      } else {
+        if (!user.did) {
+          return NextResponse.json({ error: 'OAuth identity is missing for this account.' }, { status: 400 });
+        }
+        const agent = await createOAuthAgent(user.did);
+        const profile = await agent.getProfile({ actor: user.did });
+        if (profile.data.handle !== newHandle) {
+          return NextResponse.json(
+            { error: `OAuth accounts must use the handle currently verified by BlueSky: ${profile.data.handle}` },
+            { status: 400 }
+          );
+        }
+      }
       try {
         await query('UPDATE users SET handle = $1 WHERE id = $2', [newHandle, user.id]);
       } catch (dbErr: unknown) {
@@ -91,9 +109,15 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (body.password) {
+      if (!user.encrypted_password) {
+        return NextResponse.json(
+          { error: 'OAuth accounts cannot set an app password here. Please use app-password login separately.' },
+          { status: 400 }
+        );
+      }
       const newPassword: string = body.password.trim();
-      // Verify current handle with new password
-      await agent.login({ identifier: user.handle, password: newPassword });
+      // Verify current handle with new password against the user's PDS
+      await createAgent(user.handle, newPassword);
       const encryptedPassword = encrypt(newPassword);
       await query('UPDATE users SET encrypted_password = $1 WHERE id = $2', [encryptedPassword, user.id]);
       return NextResponse.json({ success: true, updated: 'password' });

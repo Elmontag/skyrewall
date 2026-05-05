@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BskyAgent } from '@atproto/api';
 import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
-import { checkMutuals } from '@/lib/bluesky';
+import { checkMutuals, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_DIDS = 5000;
@@ -38,8 +37,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'One or more DIDs are invalid' }, { status: 400 });
     }
 
-    const agent = new BskyAgent({ service: 'https://bsky.social' });
-    await agent.login({ identifier: sessionCreds.handle, password: sessionCreds.password });
+    const agent = await createAgent(sessionCreds.handle, sessionCreds.password);
 
     const mutualDids = await checkMutuals(agent, dids);
 

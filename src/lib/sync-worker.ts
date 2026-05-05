@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
+import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, importExistingActions } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError } from '@/lib/request-security';
 
@@ -13,7 +13,8 @@ interface SyncRow {
   include_followers: boolean;
   config: Record<string, unknown>;
   handle: string;
-  encrypted_password: string;
+  encrypted_password: string | null;
+  did: string | null;
 }
 
 /** Returns DIDs already actioned by this user (DB-only, 0 API calls). */
@@ -64,7 +65,7 @@ async function hasImportedExistingBlocks(userId: string): Promise<boolean> {
 async function syncAllSubscriptions(): Promise<void> {
   const rows = await query<SyncRow>(`
     SELECT s.id AS sub_id, s.user_id, s.target_handle, s.mode, s.sub_type, s.include_followers, s.config,
-           u.handle, u.encrypted_password
+           u.handle, u.encrypted_password, u.did
     FROM subscriptions s
     JOIN users u ON s.user_id = u.id
   `);
@@ -78,8 +79,48 @@ async function syncAllSubscriptions(): Promise<void> {
 
   for (const row of rows) {
     try {
-      const password = decrypt(row.encrypted_password);
-      const agent = await createAgent(row.handle, password);
+      // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
+      // users and app-password accounts that were later linked via OAuth). Fall back to
+      // app-password if OAuth is unavailable.
+      let agent: Awaited<ReturnType<typeof createAgent>>;
+      let agentDid: string | undefined;
+
+      if (row.did) {
+        // OAuth-capable account — try OAuth first
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          agent = await createAgentForOAuth(row.did) as any;
+          agentDid = row.did;
+          // OAuth session restored successfully — clear any previous error marker
+          await query(
+            'UPDATE users SET oauth_error_since = NULL WHERE did = $1 AND oauth_error_since IS NOT NULL',
+            [row.did]
+          ).catch(() => {});
+        } catch (oauthErr) {
+          if (row.encrypted_password) {
+            // OAuth failed but we still have an app-password — fall back silently
+            console.warn(`[sync] OAuth failed for ${row.handle}, falling back to app-password:`, sanitizeError(oauthErr));
+            const password = decrypt(row.encrypted_password);
+            agent = await createAgent(row.handle, password);
+            agentDid = agent.session?.did;
+          } else {
+            console.error(`[sync] ✗ Could not restore OAuth session for ${row.handle} (${row.did}):`, sanitizeError(oauthErr));
+            // Mark when the session first started failing (don't overwrite if already set)
+            await query(
+              'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+              [row.did]
+            ).catch(() => {});
+            continue;
+          }
+        }
+      } else if (row.encrypted_password) {
+        const password = decrypt(row.encrypted_password);
+        agent = await createAgent(row.handle, password);
+        agentDid = agent.session?.did;
+      } else {
+        console.warn(`[sync] ✗ subscription ${row.sub_id}: user has no credentials (no password and no DID) — skipping`);
+        continue;
+      }
 
       // Cold-start: import existing BlueSky blocks/mutes once per user
       if (!importedUsers.has(row.user_id)) {
@@ -125,7 +166,7 @@ async function syncAllSubscriptions(): Promise<void> {
 
         if (newDids.length > 0) {
           if (action === 'block') {
-            await blockAccounts(agent, newDids);
+            await blockAccounts(agent, newDids, 10, undefined, agentDid);
           } else {
             await muteAccounts(agent, newDids);
           }
