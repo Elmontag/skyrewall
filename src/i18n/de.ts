@@ -42,7 +42,7 @@ const de: Translations = {
   homeFeature6Title: 'Statistiken',
   homeFeature6Desc: 'Visualisiere deine Moderationsaktivität: Blocks, Mutes, Quellen und Trends im Zeitverlauf.',
   reblockClearSkyNote: 'Blocker-Daten werden über die ClearSky-API (clearsky.app) abgerufen — es werden keine Zugangsdaten an diesen Dienst übermittelt.',
-  kofiSupport: 'Projekt unterstützen',
+  kofiSupport: 'Kaffee spendieren',
   homeGetStarted: 'Block-Tool öffnen',
   betaNoticeLabel: 'Early Access',
   betaNoticeText: 'SkyRewall befindet sich in aktiver Entwicklung. Große Operationen (500+ Accounts) können BlueSky-Rate-Limits auslösen — das Tool pausiert und wiederholt automatisch, aber Aufgaben können mehrere Minuten dauern.',
@@ -169,6 +169,11 @@ const de: Translations = {
   protectMutuals: 'Mutuals schützen',
   mutualProtectionOn: 'Mutuals geschützt (abgewählt)',
   mutualProtectionOff: 'Mutual-Schutz deaktiviert',
+  protectFollowings: 'Followings schützen',
+  followingProtectionOn: 'Followings geschützt (abgewählt)',
+  followingProtectionOff: 'Following-Schutz deaktiviert',
+  subProtectMutuals: 'Mutuals beim Sync schützen',
+  subProtectFollowings: 'Followings beim Sync schützen',
 
   // Reblock
   reblockTool: 'Zurückblockieren',
@@ -176,6 +181,8 @@ const de: Translations = {
   reblockDesc: 'Scanne deinen sozialen Graphen nach Konten, die dich blockiert haben, und blockiere oder schalte sie stumm.',
   reblockScan: 'Nach Blockierenden suchen',
   reblockScanning: 'Suche nach Blockierenden…',
+  reblockCheckingHistory: 'Ergebnisse werden gefiltert…',
+  reblockFilteringActioned: 'Aktionsverlauf wird geprüft…',
   reblockListTitle: 'Konten, die dich blockieren',
   reblockFound: 'gefunden',
   reblockNoneFound: 'Keine blockierenden Konten gefunden.',
@@ -240,6 +247,12 @@ const de: Translations = {
   rateLimitEstimate: 'Geschätzte Zeit: ~{time}s',
   streamingProgress: '{done} / {total} verarbeitet',
   streamingEta: '~{secs}s verbleibend',
+  postCheckingHistory: 'Aktionshistorie wird geprüft…',
+  addToListToggle: 'Auch zu Liste hinzufügen',
+  addToListResult: 'Zur Liste hinzugefügt',
+  subAddToList: 'Auch zu Liste hinzufügen (Abo)',
+  subOptionsTitle: 'Abonnement-Einstellungen',
+  subOptionsDesc: 'Schutz und Listenzuordnung für diese Aktion und zukünftige Abonnements konfigurieren.',
 
   // Errors
   errorInvalidCreds: 'Ungültige Anmeldedaten. Bitte überprüfe Handle und App-Passwort.',
@@ -257,7 +270,6 @@ const de: Translations = {
   // Listen-Feature
   listSource: 'Quelle',
   listSourceFollowers: 'Follower eines Accounts',
-  listSourceList: 'Mitglieder einer Liste',
   listPickerTitle: 'Liste auswählen',
   listPickerMyLists: 'Meine Listen',
   listPickerModLists: 'Moderationslisten',

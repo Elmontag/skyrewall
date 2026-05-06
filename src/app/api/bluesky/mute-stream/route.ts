@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getSessionUserId, isValidDid } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
-import { muteAccounts, createAgent } from '@/lib/bluesky';
+import { addToList, createAgent, muteAccounts } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   const originRejection = rejectCrossOrigin(req);
   if (originRejection) return originRejection;
 
-  let body: { dids?: unknown; source?: string; handle?: string; password?: string; stateless?: boolean };
+  let body: { dids?: unknown; source?: string; handle?: string; password?: string; stateless?: boolean; add_to_list_uri?: string };
   try {
     body = await req.json();
   } catch {
@@ -75,7 +75,18 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        controller.enqueue(encode({ done: total, total, succeeded, failed, warning, complete: true }));
+        let addedToList = 0;
+        let listAddFailed = 0;
+        const add_to_list_uri = typeof body.add_to_list_uri === 'string' && body.add_to_list_uri.startsWith('at://') ? body.add_to_list_uri : null;
+        if (add_to_list_uri && succeededDids.length > 0) {
+          try {
+            const listResult = await addToList(agent, add_to_list_uri, succeededDids);
+            addedToList = listResult.succeeded;
+            listAddFailed = listResult.failed;
+          } catch { /* non-fatal */ }
+        }
+
+        controller.enqueue(encode({ done: total, total, succeeded, failed, warning, addedToList, listAddFailed, complete: true }));
       } catch (err) {
         controller.enqueue(encode({ error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {

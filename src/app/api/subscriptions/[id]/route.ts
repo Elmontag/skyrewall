@@ -37,6 +37,26 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  if ('config' in body && typeof body.config === 'object' && body.config !== null) {
+    const allowedConfigKeys = ['protect_mutuals', 'protect_followings', 'add_to_list_uri'] as const;
+    const patch: Record<string, unknown> = {};
+    for (const key of allowedConfigKeys) {
+      if (!(key in body.config)) continue;
+      const val = (body.config as Record<string, unknown>)[key];
+      if (key === 'add_to_list_uri' && typeof val === 'string' && !val.startsWith('at://')) {
+        return NextResponse.json({ error: 'Invalid list URI format' }, { status: 400 });
+      }
+      patch[key] = val;
+    }
+    if (Object.keys(patch).length > 0) {
+      await query(
+        "UPDATE subscriptions SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb WHERE id = $2 AND user_id = $3",
+        [JSON.stringify(patch), id, userId]
+      );
+      return NextResponse.json({ success: true });
+    }
+  }
+
   return NextResponse.json({ error: 'Unsupported patch' }, { status: 400 });
 }
 

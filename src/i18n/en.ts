@@ -40,7 +40,7 @@ const en = {
   homeFeature6Title: 'Statistics',
   homeFeature6Desc: 'Visualize your moderation activity: blocks, mutes, sources, and trends over time.',
   reblockClearSkyNote: 'Blocker data is fetched via the ClearSky API (clearsky.app) — no credentials are shared with that service.',
-  kofiSupport: 'Support this project',
+  kofiSupport: 'Buy me a coffee',
   homeGetStarted: 'Open Block Tool',
   betaNoticeLabel: 'Early Access',
   betaNoticeText: 'SkyRewall is in active development. Large operations (500+ accounts) may hit BlueSky rate limits — the tool pauses and retries automatically, but jobs can take several minutes.',
@@ -167,6 +167,11 @@ const en = {
   protectMutuals: 'Protect Mutuals',
   mutualProtectionOn: 'Mutuals protected (deselected)',
   mutualProtectionOff: 'Mutual protection off',
+  protectFollowings: 'Protect Followings',
+  followingProtectionOn: 'Followings protected (deselected)',
+  followingProtectionOff: 'Following protection off',
+  subProtectMutuals: 'Protect mutuals on sync',
+  subProtectFollowings: 'Protect followings on sync',
 
   // Reblock
   reblockTool: 'Reblock',
@@ -174,6 +179,8 @@ const en = {
   reblockDesc: 'Scan your social graph for accounts that have blocked you, then block or mute them back.',
   reblockScan: 'Scan for blockers',
   reblockScanning: 'Scanning for blockers…',
+  reblockCheckingHistory: 'Filtering results…',
+  reblockFilteringActioned: 'Checking action history…',
   reblockListTitle: 'Accounts blocking you',
   reblockFound: 'found',
   reblockNoneFound: 'No accounts blocking you were found.',
@@ -238,6 +245,12 @@ const en = {
   rateLimitEstimate: 'Estimated time: ~{time}s',
   streamingProgress: '{done} / {total} processed',
   streamingEta: '~{secs}s remaining',
+  postCheckingHistory: 'Checking action history…',
+  addToListToggle: 'Also add to list',
+  addToListResult: 'Added to list',
+  subAddToList: 'Also add to list (subscription)',
+  subOptionsTitle: 'Subscription Options',
+  subOptionsDesc: 'Configure protection and list assignment for this action and any future subscription.',
 
   // Errors
   errorInvalidCreds: 'Invalid credentials. Please check your handle and app password.',
@@ -255,7 +268,6 @@ const en = {
   // Lists feature
   listSource: 'Source',
   listSourceFollowers: 'Followers of an account',
-  listSourceList: 'Members of a list',
   listPickerTitle: 'Select a list',
   listPickerMyLists: 'My Lists',
   listPickerModLists: 'Moderation Lists',

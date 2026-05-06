@@ -403,6 +403,72 @@ export async function checkMutuals(
 }
 
 /**
+ * Checks which DIDs the authenticated user actively follows
+ * (viewer.following only, regardless of whether they follow back).
+ * Returns the subset of following DIDs.
+ */
+export async function checkFollowings(
+  agent: BskyAgent,
+  dids: string[]
+): Promise<string[]> {
+  const followings: string[] = [];
+  const batchSize = 25;
+
+  for (let i = 0; i < dids.length; i += batchSize) {
+    const batch = dids.slice(i, i + batchSize);
+    try {
+      const res = await agent.getProfiles({ actors: batch });
+      for (const p of res.data.profiles) {
+        if (p.viewer?.following) {
+          followings.push(p.did);
+        }
+      }
+    } catch {
+      // skip on error
+    }
+    if (i + batchSize < dids.length) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  return followings;
+}
+
+/**
+ * Adds DIDs to a BlueSky list (curation or moderation list).
+ * Uses listitem.create — one API call per DID, batched with 200ms delay.
+ * Returns succeeded and failed counts.
+ */
+export async function addToList(
+  agent: BskyAgent,
+  listUri: string,
+  dids: string[]
+): Promise<{ succeeded: number; failed: number }> {
+  let succeeded = 0;
+  let failed = 0;
+  const batchSize = 10;
+
+  for (let i = 0; i < dids.length; i++) {
+    try {
+      await withRetry(() =>
+        agent.app.bsky.graph.listitem.create(
+          { repo: agent.session!.did },
+          { subject: dids[i], list: listUri, createdAt: new Date().toISOString() }
+        )
+      );
+      succeeded++;
+    } catch {
+      failed++;
+    }
+    if ((i + 1) % batchSize === 0 && i + 1 < dids.length) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  return { succeeded, failed };
+}
+
+/**
  * Fetches all accounts that interacted with a post (liked, reposted, or quoted).
  * Returns a deduplicated list of Followers, capped at maxResults.
  */

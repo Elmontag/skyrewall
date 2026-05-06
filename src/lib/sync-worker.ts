@@ -1,6 +1,6 @@
 import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions } from '@/lib/bluesky';
+import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions, checkMutuals, checkFollowings, addToList } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError, isValidAtUri } from '@/lib/request-security';
 import { isScopeError, isTargetUnavailableError } from '@/lib/session-utils';
@@ -221,8 +221,10 @@ async function syncAllSubscriptions(): Promise<void> {
           dids = [profile.data.did];
         }
 
+        const subscriptionConfig = (row.config as Record<string, unknown>) ?? {};
+
         // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
-        const excludeListUri = (row.config as Record<string, unknown> | null)?.exclude_list_uri;
+        const excludeListUri = subscriptionConfig.exclude_list_uri;
         if (typeof excludeListUri === 'string' && isValidAtUri(excludeListUri) && dids.length > 0) {
           const excludeDids = await getListMembersCached(excludeListUri, workAgent);
           if (excludeDids.length > 0) {
@@ -248,15 +250,35 @@ async function syncAllSubscriptions(): Promise<void> {
 
           // Filter out DIDs already actioned in a previous sync (0 extra API calls)
           const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
-          const newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
+          let newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
+
+          // Opt-in: protect mutuals and/or followings (costs O(N/25) getProfiles calls)
+          const protectMutuals = !!subscriptionConfig.protect_mutuals;
+          const protectFollowings = !!subscriptionConfig.protect_followings;
+          if ((protectMutuals || protectFollowings) && newDids.length > 0) {
+            const protectedMutuals = protectMutuals ? new Set(await checkMutuals(workAgent, newDids)) : new Set<string>();
+            const protectedFollowings = protectFollowings ? new Set(await checkFollowings(workAgent, newDids)) : new Set<string>();
+            const beforeProtect = newDids.length;
+            newDids = newDids.filter((d) => !protectedMutuals.has(d) && !protectedFollowings.has(d));
+            const protectedCount = beforeProtect - newDids.length;
+            if (protectedCount > 0) {
+              console.log(`[sync] subscription ${row.sub_id}: protected ${protectedCount} DID(s) (mutuals/followings)`);
+            }
+          }
 
           if (newDids.length > 0) {
-            if (action === 'block') {
-              await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid);
-            } else {
-              await muteAccounts(workAgent, newDids);
-            }
+            const { succeededDids } = action === 'block'
+              ? await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid)
+              : await muteAccounts(workAgent, newDids);
             await logBlockEvents(row.user_id, newDids, action, source);
+
+            if (typeof subscriptionConfig.add_to_list_uri === 'string' && subscriptionConfig.add_to_list_uri.startsWith('at://') && succeededDids.length > 0) {
+              try {
+                await addToList(workAgent, subscriptionConfig.add_to_list_uri, succeededDids);
+              } catch (err) {
+                console.warn(`[sync] ✗ addToList failed for subscription ${row.sub_id}:`, err);
+              }
+            }
           }
 
           const skipped = alreadyActioned.size;
