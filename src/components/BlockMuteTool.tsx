@@ -551,6 +551,29 @@ export default function BlockMuteTool({ mode, t }: Props) {
             )}
           </div>
 
+          {/* Add-to-list (collapsible, both sources) */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAddToList((v) => !v)}
+              className="flex items-center gap-2 text-xs font-medium transition-colors"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showAddToList ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}
+            >
+              {showAddToList ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {t.addToListToggle}
+            </button>
+            {showAddToList && (
+              <div className="mt-3">
+                <ListPicker
+                  t={t}
+                  credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
+                  selectedUri={addToListUri}
+                  onSelect={setAddToListUri}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3">
             <button
               onClick={() => setStep('credentials')}
@@ -598,30 +621,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
             </label>
           </div>
 
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowAddToList((v) => !v)}
-              className="flex items-center gap-2 text-xs font-medium transition-colors"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showAddToList ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}
-            >
-              {showAddToList ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              {t.addToListToggle}
-            </button>
-            {showAddToList && (
-              <div className="mt-3">
-                <ListPicker
-                  t={t}
-                  credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
-                  selectedUri={addToListUri}
-                  onSelect={setAddToListUri}
-                />
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-3">
+          <div className="flex gap-3">
               <button
                 onClick={() => setStep('target')}
                 className="px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center"
@@ -650,7 +650,6 @@ export default function BlockMuteTool({ mode, t }: Props) {
                 <ArrowRight size={16} />
               </button>
             </div>
-          </div>
         </div>
       )}
 

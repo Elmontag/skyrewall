@@ -15,6 +15,7 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
   const [syncStatus, setSyncStatus] = useState<{ intervalMinutes: number; nextRunAt: string | null; lastRunAt: string | null } | null>(null);
   const [patchingSubId, setPatchingSubId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [listNames, setListNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch('/api/auth/login', { method: 'GET' })
@@ -38,7 +39,24 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
       if (res.status === 401) { setLoggedIn(false); return; }
       if (res.ok) {
         const data = await res.json();
-        setSubscriptions(data.subscriptions || []);
+        const subs: Subscription[] = data.subscriptions || [];
+        setSubscriptions(subs);
+        const uris = subs
+          .map((s) => (s.config as Record<string, unknown>)?.add_to_list_uri)
+          .filter((u): u is string => typeof u === 'string');
+        if (uris.length > 0) loadListNames();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const loadListNames = async () => {
+    try {
+      const res = await fetch('/api/bluesky/lists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (res.ok) {
+        const data = await res.json();
+        const map: Record<string, string> = {};
+        for (const list of (data.lists ?? [])) map[list.uri] = list.name;
+        setListNames(map);
       }
     } catch { /* ignore */ }
   };
@@ -248,7 +266,10 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                       className="px-1.5 py-0.5 rounded text-xs flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                       style={{ backgroundColor: 'rgba(99,102,241,0.12)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.3)' }}>
                       <List size={10} />
-                      {String(sub.config?.add_to_list_uri ?? '').replace(/^at:\/\/.*\/app\.bsky\.graph\.list\//, '').slice(0, 20)}
+                      {(() => {
+                        const uri = String(sub.config?.add_to_list_uri ?? '');
+                        return listNames[uri] ?? uri.replace(/^at:\/\/.*\/app\.bsky\.graph\.list\//, '').slice(0, 20);
+                      })()}
                     </button>
                   </div>
                 )}

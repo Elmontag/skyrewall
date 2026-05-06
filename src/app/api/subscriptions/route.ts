@@ -71,11 +71,17 @@ export async function POST(req: NextRequest) {
     }
 
     // Strip unknown fields — only persist the explicitly validated keys
-    const sanitizedConfig: Record<string, string> = {};
-    const listUri = (config as Record<string, unknown>).list_uri;
-    const excludeListUri2 = (config as Record<string, unknown>).exclude_list_uri;
-    if (typeof listUri === 'string') sanitizedConfig.list_uri = listUri;
-    if (typeof excludeListUri2 === 'string') sanitizedConfig.exclude_list_uri = excludeListUri2;
+    const sanitizedConfig: Record<string, unknown> = {};
+    const cfg = config as Record<string, unknown>;
+    if (typeof cfg.list_uri === 'string') sanitizedConfig.list_uri = cfg.list_uri;
+    if (typeof cfg.exclude_list_uri === 'string') sanitizedConfig.exclude_list_uri = cfg.exclude_list_uri;
+    if (typeof cfg.add_to_list_uri === 'string' && cfg.add_to_list_uri.startsWith('at://')) sanitizedConfig.add_to_list_uri = cfg.add_to_list_uri;
+    if (cfg.protect_mutuals === true) sanitizedConfig.protect_mutuals = true;
+    if (cfg.protect_followings === true) sanitizedConfig.protect_followings = true;
+    const validInteractionTypes = new Set(['likes', 'reposts', 'quotes']);
+    if (Array.isArray(cfg.types) && cfg.types.every((t) => typeof t === 'string' && validInteractionTypes.has(t))) {
+      sanitizedConfig.types = cfg.types;
+    }
 
     const rows = await query<SubscriptionRow>(
       `INSERT INTO subscriptions (user_id, target_handle, mode, include_followers, sub_type, config)
