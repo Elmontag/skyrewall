@@ -40,7 +40,7 @@ export async function GET() {
   return NextResponse.json(metadata, {
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=300',
     },
   });
 }

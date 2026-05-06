@@ -134,14 +134,15 @@ async function syncAllSubscriptions(): Promise<void> {
       // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
       // users and app-password accounts that were later linked via OAuth). Fall back to
       // app-password if OAuth is unavailable.
-      let agent: Awaited<ReturnType<typeof createAgent>>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let agent: any;
       let agentDid: string | undefined;
+      let oauthAttempted = false;
 
       if (row.did) {
-        // OAuth-capable account — try OAuth first
+        oauthAttempted = true;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          agent = await createAgentForOAuth(row.did) as any;
+          agent = await createAgentForOAuth(row.did);
           agentDid = row.did;
           // OAuth session restored successfully — clear any previous error marker
           await query(
@@ -149,6 +150,7 @@ async function syncAllSubscriptions(): Promise<void> {
             [row.did]
           ).catch(() => {});
         } catch (oauthErr) {
+          oauthAttempted = false;
           if (row.encrypted_password) {
             // OAuth failed but we still have an app-password — fall back silently
             console.warn(`[sync] OAuth failed for ${row.handle}, falling back to app-password:`, sanitizeError(oauthErr));
@@ -178,98 +180,120 @@ async function syncAllSubscriptions(): Promise<void> {
         continue;
       }
 
-      // Cold-start: import existing BlueSky blocks/mutes once per user
-      if (!importedUsers.has(row.user_id)) {
-        const alreadyImported = await hasImportedExistingBlocks(row.user_id);
-        if (!alreadyImported) {
-          console.log(`[sync] Cold-start import for ${row.handle}...`);
-          const { blocksImported, mutesImported } = await importExistingActions(agent, row.user_id);
-          console.log(`[sync] Imported ${blocksImported} blocks + ${mutesImported} mutes for ${row.handle}`);
+      // Core processing logic, extracted so it can be retried with a different agent.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const runSubscription = async (workAgent: any, workAgentDid: string | undefined) => {
+        // Cold-start: import existing BlueSky blocks/mutes once per user
+        if (!importedUsers.has(row.user_id)) {
+          const alreadyImported = await hasImportedExistingBlocks(row.user_id);
+          if (!alreadyImported) {
+            console.log(`[sync] Cold-start import for ${row.handle}...`);
+            const { blocksImported, mutesImported } = await importExistingActions(workAgent, row.user_id);
+            console.log(`[sync] Imported ${blocksImported} blocks + ${mutesImported} mutes for ${row.handle}`);
+          }
+          importedUsers.add(row.user_id);
         }
-        importedUsers.add(row.user_id);
-      }
 
-      let dids: string[];
+        let dids: string[];
 
-      if (row.sub_type === 'reblock') {
-        dids = await fetchBlockedByFromClearSky(row.handle);
-      } else if (row.sub_type === 'postinteraction') {
-        const config = (row.config ?? {}) as { types?: string[] };
-        const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
-        const interactors = await fetchPostInteractors(agent, row.target_handle, types);
-        dids = interactors.map((f) => f.did);
-      } else if (row.sub_type === 'list') {
-        const config = (row.config ?? {}) as { list_uri?: string };
-        if (!config.list_uri) {
-          console.warn(`[sync] ✗ subscription ${row.sub_id}: sub_type=list but config.list_uri is missing — skipping`);
-          continue;
+        if (row.sub_type === 'reblock') {
+          dids = await fetchBlockedByFromClearSky(row.handle);
+        } else if (row.sub_type === 'postinteraction') {
+          const config = (row.config ?? {}) as { types?: string[] };
+          const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
+          const interactors = await fetchPostInteractors(workAgent, row.target_handle, types);
+          dids = interactors.map((f) => f.did);
+        } else if (row.sub_type === 'list') {
+          const config = (row.config ?? {}) as { list_uri?: string };
+          if (!config.list_uri) {
+            console.warn(`[sync] ✗ subscription ${row.sub_id}: sub_type=list but config.list_uri is missing — skipping`);
+            return;
+          }
+          dids = await getListMembersCached(config.list_uri, workAgent);
+        } else if (row.include_followers) {
+          const followers = await fetchAllFollowers(workAgent, row.target_handle);
+          dids = followers.map((f) => f.did);
+        } else {
+          const profile = await workAgent.getProfile({ actor: row.target_handle });
+          dids = [profile.data.did];
         }
-        dids = await getListMembersCached(config.list_uri, agent);
-      } else if (row.include_followers) {
-        const followers = await fetchAllFollowers(agent, row.target_handle);
-        dids = followers.map((f) => f.did);
-      } else {
-        const profile = await agent.getProfile({ actor: row.target_handle });
-        dids = [profile.data.did];
-      }
 
-      // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
-      const excludeListUri = (row.config as Record<string, unknown> | null)?.exclude_list_uri;
-      if (typeof excludeListUri === 'string' && isValidAtUri(excludeListUri) && dids.length > 0) {
-        const excludeDids = await getListMembersCached(excludeListUri, agent);
-        if (excludeDids.length > 0) {
-          const excludeSet = new Set(excludeDids);
-          const before = dids.length;
-          dids = dids.filter((d) => !excludeSet.has(d));
-          const excluded = before - dids.length;
-          if (excluded > 0) {
-            console.log(`[sync] subscription ${row.sub_id}: excluded ${excluded} DID(s) via exclude_list_uri`);
+        // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
+        const excludeListUri = (row.config as Record<string, unknown> | null)?.exclude_list_uri;
+        if (typeof excludeListUri === 'string' && isValidAtUri(excludeListUri) && dids.length > 0) {
+          const excludeDids = await getListMembersCached(excludeListUri, workAgent);
+          if (excludeDids.length > 0) {
+            const excludeSet = new Set(excludeDids);
+            const before = dids.length;
+            dids = dids.filter((d) => !excludeSet.has(d));
+            const excluded = before - dids.length;
+            if (excluded > 0) {
+              console.log(`[sync] subscription ${row.sub_id}: excluded ${excluded} DID(s) via exclude_list_uri`);
+            }
           }
         }
-      }
 
-      if (dids.length > 0) {
-        const action = row.mode as 'block' | 'mute';
-        const source: 'subscription' | 'reblock' | 'interaction' =
-          row.sub_type === 'reblock' ? 'reblock' :
-          row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
+        if (dids.length > 0) {
+          const action = row.mode as 'block' | 'mute';
+          const source: 'subscription' | 'reblock' | 'interaction' =
+            row.sub_type === 'reblock' ? 'reblock' :
+            row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
 
-        // Filter out whitelisted DIDs (never actioned by subscriptions)
-        const whitelisted = await getWhitelistedDids(row.user_id, dids);
-        const nonWhitelisted = dids.filter((d) => !whitelisted.has(d));
+          // Filter out whitelisted DIDs (never actioned by subscriptions)
+          const whitelisted = await getWhitelistedDids(row.user_id, dids);
+          const nonWhitelisted = dids.filter((d) => !whitelisted.has(d));
 
-        // Filter out DIDs already actioned in a previous sync (0 extra API calls)
-        const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
-        const newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
+          // Filter out DIDs already actioned in a previous sync (0 extra API calls)
+          const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
+          const newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
 
-        if (newDids.length > 0) {
-          if (action === 'block') {
-            await blockAccounts(agent, newDids, 10, undefined, agentDid);
-          } else {
-            await muteAccounts(agent, newDids);
+          if (newDids.length > 0) {
+            if (action === 'block') {
+              await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid);
+            } else {
+              await muteAccounts(workAgent, newDids);
+            }
+            await logBlockEvents(row.user_id, newDids, action, source);
           }
-          await logBlockEvents(row.user_id, newDids, action, source);
+
+          const skipped = alreadyActioned.size;
+          const wlSkipped = whitelisted.size;
+          console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped, ${wlSkipped} whitelisted)`);
+        } else {
+          console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, 0 accounts)`);
         }
 
-        const skipped = alreadyActioned.size;
-        const wlSkipped = whitelisted.size;
-        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped, ${wlSkipped} whitelisted)`);
-      } else {
-        console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, 0 accounts)`);
-      }
+        await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
+      };
 
-      await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
+      try {
+        await runSubscription(agent, agentDid);
+      } catch (workErr) {
+        const errMsg = workErr instanceof Error ? workErr.message : String(workErr);
+        // If the OAuth token is missing required scopes and app-password is available,
+        // fall back to app-password for this run and flag the user for re-auth.
+        if (errMsg.includes('Missing required scope') && oauthAttempted && row.encrypted_password) {
+          console.warn(`[sync] OAuth scope insufficient for ${row.handle} — retrying with app-password, flagging for re-auth`);
+          await query(
+            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+            [row.did]
+          ).catch(() => {});
+          const password = decrypt(row.encrypted_password);
+          const appAgent = await createAgent(row.handle, password);
+          await runSubscription(appAgent, appAgent.session?.did);
+        } else if (errMsg.includes('Missing required scope') && row.did) {
+          // Pure OAuth user — no fallback, just flag for re-auth
+          console.error(`[sync] ✗ subscription ${row.sub_id} failed: ${errMsg}`);
+          await query(
+            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+            [row.did]
+          ).catch(() => {});
+        } else {
+          throw workErr;
+        }
+      }
     } catch (err) {
       console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, sanitizeError(err));
-      // Scope errors mean the OAuth token was issued with insufficient scopes.
-      // Flag the user for re-authentication so the UI can show a warning.
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (row.did && errMsg.includes('Missing required scope')) {
-        await query(
-          'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
-          [row.did]
-        ).catch(() => {});
-      }
     }
 
     // Small inter-subscription pause to avoid burst rate-limit when a user has many subscriptions
