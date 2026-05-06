@@ -94,7 +94,7 @@ export default function Home() {
 
   const accountTabs: TabMeta[] = [
     { id: 'account',       label: t.accountSettings, description: t.accountDesc,       Icon: UserCircle },
-    { id: 'subscriptions', label: t.accountSubs,      description: t.subscribeDesc,     Icon: Bell       },
+    { id: 'subscriptions', label: t.accountSubs,      description: '',                  Icon: Bell       },
     { id: 'stats',         label: t.accountStats,     description: t.statsLast30Days,   Icon: BarChart2  },
   ];
 

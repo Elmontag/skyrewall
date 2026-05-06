@@ -159,9 +159,13 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl mx-auto">
-      <div>
+      <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subscribeTitle}</h2>
-        <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.subscribeDesc}</p>
+        {syncStatus?.nextRunAt && (
+          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+            {t.nextRunAt}: <span style={{ color: 'var(--text-primary)' }}>{new Date(syncStatus.nextRunAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}</span>
+          </span>
+        )}
       </div>
 
       {error && (
@@ -263,13 +267,6 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
 
       {/* Subscription list */}
       <div className="flex flex-col gap-2">
-      {syncStatus?.nextRunAt && subscriptions.length > 0 && (
-        <p className="text-xs text-right" style={{ color: 'var(--text-secondary)' }}>
-          {t.nextRunAt}: {new Date(syncStatus.nextRunAt).toLocaleString(undefined, {
-            hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-          })}
-        </p>
-      )}
       {subscriptions.length === 0 ? (
           <p className="text-sm text-center py-6" style={{ color: 'var(--text-secondary)' }}>{t.noSubscriptions}</p>
         ) : subscriptions.map((sub) => (
