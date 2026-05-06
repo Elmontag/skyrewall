@@ -13,7 +13,7 @@ const CLEARSKY_BASE = 'https://public.api.clearsky.services';
  * Retries an async operation on HTTP 429/503 with exponential backoff.
  * Respects Retry-After header (capped at 60s). Up to maxAttempts total tries.
  */
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -122,11 +122,11 @@ export async function fetchAllFollowers(
 
   do {
     page++;
-    const response = await agent.getFollowers({
+    const response = await withRetry(() => agent.getFollowers({
       actor: targetHandle,
       limit: 100,
       cursor,
-    });
+    }));
 
     const batch = response.data.followers.map((f) => ({
       did: f.did,
@@ -291,10 +291,23 @@ export async function fetchBlockedByFromClearSky(
 
   while (dids.length < maxResults) {
     const url = `${CLEARSKY_BASE}/api/v1/anon/single-blocklist/${encodeURIComponent(handle)}/${page}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'SkyRewall/1.0' },
-      signal: AbortSignal.timeout(15_000),
-    });
+
+    let res: Response;
+    let retries = 0;
+    // Plain fetch doesn't throw on 4xx/5xx — handle 429 manually with backoff
+    while (true) {
+      res = await fetch(url, {
+        headers: { 'User-Agent': 'SkyRewall/1.0' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.status === 429 && retries < 3) {
+        const retryAfter = parseInt(res.headers.get('retry-after') ?? '5', 10);
+        await new Promise((r) => setTimeout(r, Math.min((isNaN(retryAfter) ? 5 : retryAfter) * 1000, 30_000)));
+        retries++;
+        continue;
+      }
+      break;
+    }
     if (!res.ok) break;
 
     const json = await res.json() as {
@@ -419,7 +432,7 @@ export async function fetchPostInteractors(
     let cursor: string | undefined;
     do {
       if (seen.size >= maxResults) break;
-      const res = await agent.getLikes({ uri: atUri, limit: 100, cursor });
+      const res = await withRetry(() => agent.getLikes({ uri: atUri, limit: 100, cursor }));
       for (const l of res.data.likes) addActor(l.actor);
       cursor = res.data.cursor;
       if (cursor) await new Promise((r) => setTimeout(r, 250));
@@ -430,7 +443,7 @@ export async function fetchPostInteractors(
     let cursor: string | undefined;
     do {
       if (seen.size >= maxResults) break;
-      const res = await agent.getRepostedBy({ uri: atUri, limit: 100, cursor });
+      const res = await withRetry(() => agent.getRepostedBy({ uri: atUri, limit: 100, cursor }));
       for (const a of res.data.repostedBy) addActor(a);
       cursor = res.data.cursor;
       if (cursor) await new Promise((r) => setTimeout(r, 250));
@@ -441,7 +454,7 @@ export async function fetchPostInteractors(
     let cursor: string | undefined;
     do {
       if (seen.size >= maxResults) break;
-      const res = await agent.api.app.bsky.feed.getQuotes({ uri: atUri, limit: 100, cursor });
+      const res = await withRetry(() => agent.api.app.bsky.feed.getQuotes({ uri: atUri, limit: 100, cursor }));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const resAny = res.data as any;
       const feed: Array<{ post?: { author?: { did: string; handle: string; displayName?: string; avatar?: string } } }> = resAny.feed ?? [];

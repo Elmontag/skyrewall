@@ -2,7 +2,7 @@ import { query } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
 import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
-import { sanitizeError } from '@/lib/request-security';
+import { sanitizeError, isValidAtUri } from '@/lib/request-security';
 
 interface SyncRow {
   sub_id: string;
@@ -169,6 +169,10 @@ async function syncAllSubscriptions(): Promise<void> {
         const password = decrypt(row.encrypted_password);
         agent = await createAgent(row.handle, password);
         agentDid = agent.session?.did;
+        if (!agentDid) {
+          console.warn(`[sync] ✗ subscription ${row.sub_id}: app-password login succeeded but session has no DID — skipping`);
+          continue;
+        }
       } else {
         console.warn(`[sync] ✗ subscription ${row.sub_id}: user has no credentials (no password and no DID) — skipping`);
         continue;
@@ -211,7 +215,7 @@ async function syncAllSubscriptions(): Promise<void> {
 
       // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
       const excludeListUri = (row.config as Record<string, unknown> | null)?.exclude_list_uri;
-      if (typeof excludeListUri === 'string' && excludeListUri.startsWith('at://') && dids.length > 0) {
+      if (typeof excludeListUri === 'string' && isValidAtUri(excludeListUri) && dids.length > 0) {
         const excludeDids = await getListMembersCached(excludeListUri, agent);
         if (excludeDids.length > 0) {
           const excludeSet = new Set(excludeDids);
@@ -270,11 +274,23 @@ export function startSyncWorker(): void {
 
   console.log(`[sync] Worker started — interval: ${intervalMinutes} min`);
 
-  setTimeout(() => {
-    syncAllSubscriptions().catch((err) => console.error('[sync] Initial run failed:', sanitizeError(err)));
-  }, 10_000);
+  let syncRunning = false;
 
-  setInterval(() => {
-    syncAllSubscriptions().catch((err) => console.error('[sync] Scheduled run failed:', sanitizeError(err)));
-  }, intervalMs);
+  async function runSync(label: string): Promise<void> {
+    if (syncRunning) {
+      console.warn(`[sync] ${label} skipped — previous run still in progress`);
+      return;
+    }
+    syncRunning = true;
+    try {
+      await syncAllSubscriptions();
+    } catch (err) {
+      console.error(`[sync] ${label} failed:`, sanitizeError(err));
+    } finally {
+      syncRunning = false;
+    }
+  }
+
+  setTimeout(() => runSync('Initial run'), 10_000);
+  setInterval(() => { runSync('Scheduled run').catch(() => {}); }, intervalMs);
 }
