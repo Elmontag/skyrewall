@@ -12,6 +12,7 @@ interface SubscriptionRow {
   config: Record<string, unknown>;
   last_updated: string | null;
   created_at: string;
+  paused_reason: string | null;
 }
 
 export async function GET() {
@@ -19,7 +20,7 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const subscriptions = await query<SubscriptionRow>(
-    'SELECT id, target_handle, mode, sub_type, include_followers, config, last_updated, created_at FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC',
+    'SELECT id, target_handle, mode, sub_type, include_followers, config, last_updated, created_at, paused_reason FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC',
     [userId]
   );
 

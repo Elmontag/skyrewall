@@ -175,4 +175,9 @@ export async function initDb(): Promise<void> {
       fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // Pause reason for subscriptions whose target account is unavailable
+  await query(`
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paused_reason TEXT
+  `).catch(() => {});
 }

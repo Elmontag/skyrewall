@@ -38,3 +38,23 @@ export function isValidDid(did: string): boolean {
 export function isScopeError(message: string): boolean {
   return message.includes('Missing required scope');
 }
+
+/**
+ * Detects whether an error indicates the subscription target account is
+ * permanently unavailable (deactivated, suspended, taken down, or deleted).
+ * When true, the subscription should be paused rather than retried.
+ */
+export function isTargetUnavailableError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    message.includes('AccountDeactivated') ||
+    message.includes('AccountTakendown') ||
+    message.includes('AccountSuspended') ||
+    message.includes('ActorNotFound') ||
+    lower.includes('profile not found') ||
+    lower.includes('could not find user') ||
+    lower.includes('actor not found') ||
+    lower.includes('account has been deactivated') ||
+    lower.includes('account has been suspended')
+  );
+}

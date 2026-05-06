@@ -6,6 +6,7 @@ import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-coo
 import { isValidDid } from '@/lib/session';
 import { createAgent } from '@/lib/bluesky';
 import { sanitizeError } from '@/lib/request-security';
+import { didWebToDocumentUrl } from '@/lib/pds';
 
 interface UserRow {
   id: string;
@@ -59,6 +60,25 @@ export async function GET(req: NextRequest) {
         if (plcRes.ok) {
           const plcDoc = await plcRes.json() as { alsoKnownAs?: string[] };
           const atUri = plcDoc.alsoKnownAs?.find((a: string) => a.startsWith('at://'));
+          if (atUri) handle = atUri.replace('at://', '');
+        }
+      } catch {
+        // best-effort; DID-only match will still work for returning users
+      }
+    }
+
+    // did:web: fallback — fetch the DID document from the well-known URL
+    // (only runs when the public AppView failed, e.g. requireSignIn profiles)
+    if (!handle && did.startsWith('did:web:')) {
+      try {
+        const docUrl = didWebToDocumentUrl(did);
+        const docRes = await fetch(docUrl, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (docRes.ok) {
+          const doc = await docRes.json() as { alsoKnownAs?: string[] };
+          const atUri = doc.alsoKnownAs?.find((a: string) => a.startsWith('at://'));
           if (atUri) handle = atUri.replace('at://', '');
         }
       } catch {

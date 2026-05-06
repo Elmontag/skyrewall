@@ -30,6 +30,7 @@ export interface Subscription {
   config: Record<string, unknown>;
   last_updated: string | null;
   created_at: string;
+  paused_reason: string | null;
 }
 
 export interface User {

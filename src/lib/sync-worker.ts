@@ -3,7 +3,7 @@ import { decrypt } from '@/lib/encryption';
 import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError, isValidAtUri } from '@/lib/request-security';
-import { isScopeError } from '@/lib/session-utils';
+import { isScopeError, isTargetUnavailableError } from '@/lib/session-utils';
 
 interface SyncRow {
   sub_id: string;
@@ -69,6 +69,7 @@ async function syncAllSubscriptions(): Promise<void> {
            u.handle, u.encrypted_password, u.did
     FROM subscriptions s
     JOIN users u ON s.user_id = u.id
+    WHERE s.paused_reason IS NULL
   `);
 
   if (rows.length === 0) return;
@@ -288,6 +289,14 @@ async function syncAllSubscriptions(): Promise<void> {
           await query(
             'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
             [row.did]
+          ).catch(() => {});
+        } else if (isTargetUnavailableError(errMsg)) {
+          // Target account is permanently gone — pause the subscription
+          const reason = `Target account unavailable: ${errMsg.slice(0, 120)}`;
+          console.warn(`[sync] ⏸ subscription ${row.sub_id} paused — ${reason}`);
+          await query(
+            'UPDATE subscriptions SET paused_reason = $1 WHERE id = $2',
+            [reason, row.sub_id]
           ).catch(() => {});
         } else {
           throw workErr;

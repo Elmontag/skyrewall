@@ -117,6 +117,9 @@ const en = {
   lastUpdated: 'Last updated',
   never: 'Never',
   addSubscription: 'Add Subscription',
+  subscriptionPausedTitle: 'Subscription paused',
+  subscriptionPausedRetry: 'Retry',
+  subscriptionPausedHint: 'The target account could not be reached. Retry to re-enable, or delete this subscription.',
 
   // Auth
   loginTitle: 'Login to SkyreWall',
