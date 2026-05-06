@@ -109,6 +109,19 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setStep('followers');
 
     if (source === 'followers' && !includeFollowers) {
+      // noFollowers mode: still resolve the target DID so handleConfirm can action them
+      const credFields = prefilled ? {} : { handle, password, stateless: true };
+      try {
+        const r = await fetch('/api/bluesky/followers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...credFields, targetHandle, resolveOnly: true }),
+        });
+        if (r.ok) {
+          const data = await r.json() as { targetDid?: string };
+          if (data.targetDid) setTargetDid(data.targetDid);
+        }
+      } catch { /* non-fatal — confirm will have empty dids */ }
       setFollowers([]);
       setSelected(new Set());
       setFetchProgress({ count: 0, loading: false });
