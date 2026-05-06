@@ -13,6 +13,7 @@ interface Props {
 export default function SubscriptionManager({ t, onNeedLogin }: Props) {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [syncStatus, setSyncStatus] = useState<{ intervalMinutes: number; nextRunAt: string | null; lastRunAt: string | null } | null>(null);
   const [newTarget, setNewTarget] = useState('');
   const [newMode, setNewMode] = useState<Mode>('block');
   const [newIncludeFollowers, setNewIncludeFollowers] = useState(true);
@@ -25,11 +26,18 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
   useEffect(() => {
     fetch('/api/auth/login', { method: 'GET' })
       .then((r) => {
-        if (r.ok) { setLoggedIn(true); loadSubscriptions(); }
+        if (r.ok) { setLoggedIn(true); loadSubscriptions(); loadSyncStatus(); }
         else setLoggedIn(false);
       })
       .catch(() => setLoggedIn(false));
   }, []);
+
+  const loadSyncStatus = async () => {
+    try {
+      const res = await fetch('/api/sync/status');
+      if (res.ok) setSyncStatus(await res.json());
+    } catch { /* ignore */ }
+  };
 
   const loadSubscriptions = async () => {
     try {
@@ -255,6 +263,13 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
 
       {/* Subscription list */}
       <div className="flex flex-col gap-2">
+      {syncStatus?.nextRunAt && subscriptions.length > 0 && (
+        <p className="text-xs text-right" style={{ color: 'var(--text-secondary)' }}>
+          {t.nextRunAt}: {new Date(syncStatus.nextRunAt).toLocaleString(undefined, {
+            hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+          })}
+        </p>
+      )}
       {subscriptions.length === 0 ? (
           <p className="text-sm text-center py-6" style={{ color: 'var(--text-secondary)' }}>{t.noSubscriptions}</p>
         ) : subscriptions.map((sub) => (
@@ -301,7 +316,13 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                   )}
                 </div>
                 <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                  {t.lastUpdated}: {sub.last_updated ? new Date(sub.last_updated).toLocaleDateString() : t.never}
+                  {t.lastUpdated}: {sub.last_updated
+                    ? new Date(sub.last_updated).toLocaleString(undefined, {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit',
+                        timeZoneName: 'short',
+                      })
+                    : t.never}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">

@@ -122,6 +122,7 @@ const de: Translations = {
   subscriptionPausedTitle: 'Abonnement pausiert',
   subscriptionPausedRetry: 'Erneut versuchen',
   subscriptionPausedHint: 'Das Ziel-Konto war nicht erreichbar. Erneut versuchen zum Reaktivieren, oder Abonnement löschen.',
+  nextRunAt: 'Nächste Synchronisierung',
 
   // Auth
   loginTitle: 'Bei SkyreWall anmelden',

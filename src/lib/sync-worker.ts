@@ -4,6 +4,7 @@ import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, mut
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError, isValidAtUri } from '@/lib/request-security';
 import { isScopeError, isTargetUnavailableError } from '@/lib/session-utils';
+import { syncState } from '@/lib/sync-state';
 
 interface SyncRow {
   sub_id: string;
@@ -315,6 +316,8 @@ export function startSyncWorker(): void {
   const intervalMinutes = Math.max(1, parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '60', 10));
   const intervalMs = intervalMinutes * 60 * 1000;
 
+  syncState.intervalMinutes = intervalMinutes;
+
   console.log(`[sync] Worker started — interval: ${intervalMinutes} min`);
 
   let syncRunning = false;
@@ -327,14 +330,18 @@ export function startSyncWorker(): void {
     syncRunning = true;
     try {
       await syncAllSubscriptions();
+      syncState.lastRunAt = new Date();
     } catch (err) {
       console.error(`[sync] ${label} failed:`, sanitizeError(err));
     } finally {
       syncRunning = false;
+      syncState.nextRunAt = new Date(Date.now() + intervalMs);
     }
   }
 
-  setTimeout(() => runSync('Initial run'), 10_000);
+  const initialDelayMs = 10_000;
+  syncState.nextRunAt = new Date(Date.now() + initialDelayMs);
+  setTimeout(() => runSync('Initial run'), initialDelayMs);
   setInterval(() => { runSync('Scheduled run').catch(() => {}); }, intervalMs);
 }
 

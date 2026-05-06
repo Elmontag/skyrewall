@@ -13,11 +13,11 @@ export default async function ImpressumPage() {
   const html = await marked.parse(md);
 
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100 p-8">
-      <div className="max-w-2xl mx-auto">
+    <main className="min-h-screen overflow-y-auto" style={{ backgroundColor: 'var(--bg)', color: 'var(--text-primary)' }}>
+      <div className="max-w-2xl mx-auto px-6 py-10">
         <Link href="/" className="text-sky-400 hover:underline text-sm mb-6 inline-block">← Zurück</Link>
         <article
-          className="prose prose-invert prose-sky max-w-none"
+          className="prose prose-invert prose-sky max-w-none prose-headings:text-sky-300 prose-a:text-sky-400 prose-strong:text-gray-200"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>

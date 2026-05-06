@@ -133,7 +133,7 @@ export default function Home() {
             <div className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               {t.appName}
             </div>
-            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.1-gamma2</div>
+            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.1-gamma3</div>
           </div>
         </div>
 

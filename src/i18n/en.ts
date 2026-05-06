@@ -120,6 +120,7 @@ const en = {
   subscriptionPausedTitle: 'Subscription paused',
   subscriptionPausedRetry: 'Retry',
   subscriptionPausedHint: 'The target account could not be reached. Retry to re-enable, or delete this subscription.',
+  nextRunAt: 'Next sync',
 
   // Auth
   loginTitle: 'Login to SkyreWall',
