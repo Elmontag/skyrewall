@@ -219,22 +219,27 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                     style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
                     {sub.mode}
                   </span>
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {sub.include_followers ? t.includeFollowers : t.withoutFollowers}
-                  </span>
-                  {/* followers_only badge — shown when include_followers=true */}
-                  {sub.include_followers && (() => {
-                    const cfg = sub.config as Record<string, unknown> | null;
-                    const followersOnly = cfg?.followers_only;
-                    // followersOnly===false → main account is included; undefined/true → followers only
-                    if (followersOnly === false) {
+                  {/* Follower-mode badge — single badge showing one of 3 modes */}
+                  {(() => {
+                    if (!sub.include_followers) {
                       return (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
-                          {t.includeMainAccount}
+                          style={{ backgroundColor: 'var(--bg-border)', color: 'var(--text-secondary)' }}>
+                          {t.withoutFollowers}
                         </span>
                       );
                     }
+                    const cfg = sub.config as Record<string, unknown> | null;
+                    if ((cfg?.followers_only) === false) {
+                      // explicit false = withMain
+                      return (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ backgroundColor: 'rgba(0,133,255,0.1)', color: 'var(--accent)' }}>
+                          {t.includeFollowers}
+                        </span>
+                      );
+                    }
+                    // undefined or true = followersOnly (default)
                     return (
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium"
                         style={{ backgroundColor: 'rgba(99,102,241,0.1)', color: '#6366f1' }}>

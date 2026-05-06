@@ -82,7 +82,7 @@ const de: Translations = {
   muteTool: 'Stummschalten',
   targetHandle: 'Ziel-Handle zum Blockieren/Stummschalten',
   targetHandlePlaceholder: 'ziel.bsky.social',
-  includeFollowers: 'Follower einbeziehen',
+  includeFollowers: 'Follower + Hauptaccount',
   withoutFollowers: 'Nur Zielkonto (ohne Follower)',
   loadFollowers: 'Follower laden',
   loading: 'Lädt...',

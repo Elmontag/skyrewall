@@ -12,6 +12,7 @@ interface Props {
 }
 
 type Step = 'credentials' | 'target' | 'suboptions' | 'followers' | 'processing' | 'done';
+type FollowerMode = 'withMain' | 'followersOnly' | 'noFollowers';
 
 interface Result {
   succeeded: number;
@@ -29,8 +30,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [prefilled, setPrefilled] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [targetHandle, setTargetHandle] = useState('');
-  const [includeFollowers, setIncludeFollowers] = useState(true);
-  const [followersOnly, setFollowersOnly] = useState(true);
+  const [followerMode, setFollowerMode] = useState<FollowerMode>('followersOnly');
   const [followers, setFollowers] = useState<Follower[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
@@ -80,6 +80,10 @@ export default function BlockMuteTool({ mode, t }: Props) {
     ? [t.step2Title, t.subOptionsTitle, t.followerListTitle]
     : [t.step1Title, t.step2Title, t.followerListTitle];
   const stepIndex = displayedSteps.indexOf(step);
+
+  // Derived values from followerMode
+  const includeFollowers = followerMode !== 'noFollowers';
+  const followersOnly = followerMode === 'followersOnly';
 
   const handleStep1 = () => {
     if (!handle.trim()) { setError(t.errorHandleRequired); return; }
@@ -368,7 +372,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     setSource('followers');
-    setFollowersOnly(true);
+    setFollowerMode('followersOnly');
     setListUri('');
     setExcludeListUri('');
     setShowExclude(false);
@@ -513,24 +517,25 @@ export default function BlockMuteTool({ mode, t }: Props) {
             />
           </div>
           <div className="flex flex-col gap-2">
-            {[
-              { value: true, label: t.includeFollowers },
-              { value: false, label: t.withoutFollowers },
-            ].map(({ value, label }) => (
+            {([
+              { value: 'withMain' as FollowerMode, label: t.includeFollowers },
+              { value: 'followersOnly' as FollowerMode, label: t.followersOnly },
+              { value: 'noFollowers' as FollowerMode, label: t.withoutFollowers },
+            ] as { value: FollowerMode; label: string }[]).map(({ value, label }) => (
               <label
-                key={String(value)}
+                key={value}
                 className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
                 style={{
-                  backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                  border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
+                  backgroundColor: followerMode === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                  border: `1px solid ${followerMode === value ? 'var(--accent)' : 'var(--bg-border)'}`,
                 }}
-                onClick={() => setIncludeFollowers(value)}
+                onClick={() => setFollowerMode(value)}
               >
                 <div
                   className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                  style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
+                  style={{ borderColor: followerMode === value ? 'var(--accent)' : 'var(--bg-border)' }}
                 >
-                  {includeFollowers === value && (
+                  {followerMode === value && (
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                   )}
                 </div>
@@ -538,29 +543,6 @@ export default function BlockMuteTool({ mode, t }: Props) {
               </label>
             ))}
           </div>
-
-          {/* Followers-only toggle (only relevant when including followers) */}
-          {includeFollowers && (
-            <label
-              className="flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all"
-              style={{
-                backgroundColor: followersOnly ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                border: `1px solid ${followersOnly ? 'var(--accent)' : 'var(--bg-border)'}`,
-              }}
-              onClick={() => setFollowersOnly((v) => !v)}
-            >
-              <div
-                className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{ borderColor: followersOnly ? 'var(--accent)' : 'var(--bg-border)', background: followersOnly ? 'var(--accent)' : 'transparent' }}
-              >
-                {followersOnly && <Check size={10} strokeWidth={3} color="#fff" />}
-              </div>
-              <div>
-                <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{t.followersOnly}</div>
-                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.followersOnlyHint}</div>
-              </div>
-            </label>
-          )}
 
           {/* Exclusion list (collapsible, both sources) */}
           <div>

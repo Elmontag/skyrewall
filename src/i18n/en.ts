@@ -80,7 +80,7 @@ const en = {
   muteTool: 'Mute Tool',
   targetHandle: 'Target Handle to block/mute',
   targetHandlePlaceholder: 'target.bsky.social',
-  includeFollowers: 'Include followers',
+  includeFollowers: 'Followers + main account',
   withoutFollowers: 'Without followers (target only)',
   loadFollowers: 'Load Followers',
   loading: 'Loading...',
