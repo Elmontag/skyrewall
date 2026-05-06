@@ -270,11 +270,11 @@ async function syncAllSubscriptions(): Promise<void> {
             const { succeededDids } = action === 'block'
               ? await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid)
               : await muteAccounts(workAgent, newDids);
-            await logBlockEvents(row.user_id, newDids, action, source);
+            await logBlockEvents(row.user_id, succeededDids, action, source);
 
             if (typeof subscriptionConfig.add_to_list_uri === 'string' && subscriptionConfig.add_to_list_uri.startsWith('at://') && succeededDids.length > 0) {
               try {
-                await addToList(workAgent, subscriptionConfig.add_to_list_uri, succeededDids);
+                await addToList(workAgent, subscriptionConfig.add_to_list_uri, succeededDids, workAgentDid);
               } catch (err) {
                 console.warn(`[sync] ✗ addToList failed for subscription ${row.sub_id}:`, err);
               }

@@ -41,9 +41,10 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
         const data = await res.json();
         const subs: Subscription[] = data.subscriptions || [];
         setSubscriptions(subs);
-        const uris = subs
-          .map((s) => (s.config as Record<string, unknown>)?.add_to_list_uri)
-          .filter((u): u is string => typeof u === 'string');
+        const uris = subs.flatMap((s) => {
+          const cfg = s.config as Record<string, unknown> | null;
+          return [cfg?.add_to_list_uri, cfg?.exclude_list_uri, cfg?.list_uri].filter((u): u is string => typeof u === 'string');
+        });
         if (uris.length > 0) loadListNames();
       }
     } catch { /* ignore */ }
@@ -223,11 +224,27 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                   </span>
                   {!!(sub.config as Record<string, unknown>)?.exclude_list_uri && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
-                      +{t.listExcludeLabel}
+                      style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}
+                      title={String((sub.config as Record<string, unknown>).exclude_list_uri)}>
+                      +{t.listExcludeLabel}{(() => {
+                        const uri = String((sub.config as Record<string, unknown>).exclude_list_uri);
+                        const name = listNames[uri];
+                        return name ? `: ${name}` : '';
+                      })()}
                     </span>
                   )}
                 </div>
+                {sub.sub_type === 'list' && !!(sub.config as Record<string, unknown>)?.list_uri && (
+                  <div className="flex items-center gap-1 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <List size={10} style={{ flexShrink: 0 }} />
+                    <span className="truncate" title={String((sub.config as Record<string, unknown>).list_uri)}>
+                      {(() => {
+                        const uri = String((sub.config as Record<string, unknown>).list_uri);
+                        return listNames[uri] ?? uri.replace(/^at:\/\/.*\/app\.bsky\.graph\.list\//, '').slice(0, 30);
+                      })()}
+                    </span>
+                  </div>
+                )}
                 {sub.sub_type !== 'list' && (
                   <div className="flex items-center gap-1.5 mt-1">
                     {(() => {

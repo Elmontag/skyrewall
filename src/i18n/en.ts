@@ -277,6 +277,7 @@ const en = {
   listPickerUrlPlaceholder: 'at://did:.../app.bsky.graph.list/...',
   listPickerUrlInvalid: 'Please enter a valid at:// list URI.',
   listPickerMembers: 'members',
+  listPickerSubscribed: 'Subscribed',
   listExcludeToggle: 'Exclude members of a list',
   listExcludeHint: 'Accounts in this list will be removed from the selection (whitelist).',
   listExcludeLabel: 'Exclusion list',

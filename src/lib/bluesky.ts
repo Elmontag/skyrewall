@@ -438,12 +438,19 @@ export async function checkFollowings(
  * Adds DIDs to a BlueSky list (curation or moderation list).
  * Uses listitem.create — one API call per DID, batched with 200ms delay.
  * Returns succeeded and failed counts.
+ *
+ * @param repoDid - The DID of the repo owner (required for OAuth agents where
+ *   agent.session may be undefined). Falls back to agent.session?.did.
  */
 export async function addToList(
   agent: BskyAgent,
   listUri: string,
-  dids: string[]
+  dids: string[],
+  repoDid?: string
 ): Promise<{ succeeded: number; failed: number }> {
+  const repo = repoDid ?? agent.session?.did;
+  if (!repo) throw new Error('No active session DID for addToList');
+
   let succeeded = 0;
   let failed = 0;
   const batchSize = 10;
@@ -452,7 +459,7 @@ export async function addToList(
     try {
       await withRetry(() =>
         agent.app.bsky.graph.listitem.create(
-          { repo: agent.session!.did },
+          { repo },
           { subject: dids[i], list: listUri, createdAt: new Date().toISOString() }
         )
       );
@@ -615,5 +622,51 @@ export async function fetchUserLists(
   } while (cursor);
 
   return lists;
+}
+
+/**
+ * Fetches moderation lists the authenticated user has subscribed to
+ * (via getListMutes and getListBlocks). These are lists created by others
+ * that the user follows/applies. Deduplicates by URI.
+ */
+export async function fetchSubscribedModLists(agent: BskyAgent): Promise<BlueskyList[]> {
+  const seen = new Map<string, BlueskyList>();
+
+  const addList = (list: { uri: string; name: string; purpose: string; listItemCount?: number; avatar?: string; description?: string }) => {
+    if (!seen.has(list.uri)) {
+      seen.set(list.uri, {
+        uri: list.uri,
+        name: list.name,
+        purpose: list.purpose,
+        itemCount: list.listItemCount ?? 0,
+        avatar: list.avatar,
+        description: list.description,
+      });
+    }
+  };
+
+  // Subscribed mute lists
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await withRetry(() => agent.app.bsky.graph.getListMutes({ limit: 100, cursor }));
+      for (const list of res.data.lists) addList(list);
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 200));
+    } while (cursor);
+  } catch { /* non-fatal */ }
+
+  // Subscribed block lists
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await withRetry(() => agent.app.bsky.graph.getListBlocks({ limit: 100, cursor }));
+      for (const list of res.data.lists) addList(list);
+      cursor = res.data.cursor;
+      if (cursor) await new Promise((r) => setTimeout(r, 200));
+    } while (cursor);
+  } catch { /* non-fatal */ }
+
+  return Array.from(seen.values());
 }
 

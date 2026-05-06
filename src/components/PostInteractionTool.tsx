@@ -446,7 +446,7 @@ export default function PostInteractionTool({ t }: Props) {
             </button>
             {showAddToList && (
               <div className="mt-3">
-                <ListPicker t={t} selectedUri={addToListUri} onSelect={setAddToListUri} />
+                <ListPicker t={t} selectedUri={addToListUri} onSelect={setAddToListUri} showModLists />
               </div>
             )}
           </div>

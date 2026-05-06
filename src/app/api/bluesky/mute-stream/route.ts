@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getSessionUserId, isValidDid } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { addToList, createAgent, muteAccounts } from '@/lib/bluesky';
+import type { BskyAgent } from '@atproto/api';
 import { logBlockEvents } from '@/lib/block-events';
 import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
 
@@ -36,11 +37,14 @@ export async function POST(req: NextRequest) {
   });
   if (limited) return limited;
 
-  let agent;
+  let agent: BskyAgent;
+  let agentDid: string | undefined;
   if (sessionAgent) {
     agent = sessionAgent.agent;
+    agentDid = agent.session?.did;
   } else if (isStateless && body.handle && body.password) {
     agent = await createAgent(body.handle, body.password);
+    agentDid = agent.session?.did;
   } else {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest) {
         const add_to_list_uri = typeof body.add_to_list_uri === 'string' && body.add_to_list_uri.startsWith('at://') ? body.add_to_list_uri : null;
         if (add_to_list_uri && succeededDids.length > 0) {
           try {
-            const listResult = await addToList(agent, add_to_list_uri, succeededDids);
+            const listResult = await addToList(agent, add_to_list_uri, succeededDids, agentDid);
             addedToList = listResult.succeeded;
             listAddFailed = listResult.failed;
           } catch { /* non-fatal */ }

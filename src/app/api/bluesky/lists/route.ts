@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
-import { fetchUserLists, createAgent } from '@/lib/bluesky';
+import { fetchUserLists, fetchSubscribedModLists, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 export async function POST(req: NextRequest) {
@@ -34,7 +34,12 @@ export async function POST(req: NextRequest) {
 
     const lists = await fetchUserLists(agent);
 
-    return NextResponse.json({ lists });
+    let subscribedModLists;
+    if (body.include_subscribed === true) {
+      subscribedModLists = await fetchSubscribedModLists(agent);
+    }
+
+    return NextResponse.json({ lists, ...(subscribedModLists !== undefined ? { subscribedModLists } : {}) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[api/bluesky/lists]', sanitizeError(err));

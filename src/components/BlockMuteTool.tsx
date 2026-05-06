@@ -546,6 +546,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
                   credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
                   selectedUri={excludeListUri}
                   onSelect={setExcludeListUri}
+                  showModLists
+                  showSubscribedModLists
                 />
               </div>
             )}
@@ -569,6 +571,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
                   credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
                   selectedUri={addToListUri}
                   onSelect={setAddToListUri}
+                  showModLists
                 />
               </div>
             )}

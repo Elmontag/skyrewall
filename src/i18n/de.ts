@@ -279,6 +279,7 @@ const de: Translations = {
   listPickerUrlPlaceholder: 'at://did:.../app.bsky.graph.list/...',
   listPickerUrlInvalid: 'Bitte eine gültige at://-Listen-URI eingeben.',
   listPickerMembers: 'Mitglieder',
+  listPickerSubscribed: 'Abonniert',
   listExcludeToggle: 'Listenmitglieder ausschließen',
   listExcludeHint: 'Accounts in dieser Liste werden aus der Auswahl entfernt (Whitelist).',
   listExcludeLabel: 'Ausschluss-Liste',
