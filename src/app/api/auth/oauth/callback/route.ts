@@ -124,6 +124,13 @@ export async function GET(req: NextRequest) {
       user = created[0];
     }
 
+    // Clear any previous OAuth error flag now that auth completed successfully.
+    // Without this, the re-auth warning banner would persist until the next sync run.
+    await query(
+      'UPDATE users SET oauth_error_since = NULL WHERE id = $1 AND oauth_error_since IS NOT NULL',
+      [user.id]
+    ).catch(() => {});
+
     const sessionData = signSession(
       JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) })
     );
