@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, LogIn, LogOut, Coffee, type LucideIcon } from 'lucide-react';
+import { ShieldX, VolumeX, Bell, Shield, Sun, Moon, Globe, Home as HomeIcon, UserCircle, RefreshCcw, MessageSquareX, BarChart2, LogIn, LogOut, Coffee, RefreshCw, type LucideIcon } from 'lucide-react';
 import type { Language, Mode } from '@/types';
 import en from '@/i18n/en';
 import de from '@/i18n/de';
@@ -27,14 +27,43 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [notice, setNotice] = useState('');
+  const [oauthErrorSince, setOauthErrorSince] = useState<string | null>(null);
+  const [isOAuthUser, setIsOAuthUser] = useState(false);
+  const [oauthReauthLoading, setOauthReauthLoading] = useState(false);
   const t = lang === 'en' ? en : de;
 
   // Check auth state on mount
   useEffect(() => {
     fetch('/api/auth/login', { method: 'GET' })
-      .then((r) => setLoggedIn(r.ok))
+      .then(async (r) => {
+        setLoggedIn(r.ok);
+        if (r.ok) {
+          const data = await r.json().catch(() => ({}));
+          setOauthErrorSince(data.user?.oauthErrorSince ?? null);
+          setIsOAuthUser(data.user?.isOAuth ?? false);
+        }
+      })
       .catch(() => setLoggedIn(false));
   }, []);
+
+  const handleGlobalReAuth = async () => {
+    setOauthReauthLoading(true);
+    try {
+      const res = await fetch('/api/auth/oauth/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ privacyAccepted: true }),
+      });
+      if (res.ok) {
+        const { redirectUrl } = await res.json();
+        window.location.href = redirectUrl;
+      }
+    } catch {
+      // ignore — user can try again
+    } finally {
+      setOauthReauthLoading(false);
+    }
+  };
 
   const handleSidebarLogout = async () => {
     await fetch('/api/auth/login', { method: 'DELETE' });
@@ -104,7 +133,7 @@ export default function Home() {
             <div className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               {t.appName}
             </div>
-            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.1-gamma</div>
+            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.1-gamma2</div>
           </div>
         </div>
 
@@ -239,6 +268,36 @@ export default function Home() {
           </div>
           <div style={{ width: '30px' }} />
         </header>
+
+        {/* Global OAuth reconnect banner — visible on all tabs */}
+        {loggedIn && isOAuthUser && oauthErrorSince && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 sticky top-0 z-20 md:relative"
+            style={{
+              backgroundColor: 'color-mix(in srgb, #f59e0b 12%, var(--bg-card))',
+              borderBottom: '1px solid color-mix(in srgb, #f59e0b 35%, transparent)',
+            }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCcw size={14} className="flex-shrink-0" style={{ color: '#f59e0b' }} />
+              <span className="text-xs font-medium" style={{ color: '#f59e0b' }}>
+                {t.oauthSessionExpiredTitle}
+              </span>
+              <span className="text-xs hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>
+                — {t.oauthSessionExpiredDesc}
+              </span>
+            </div>
+            <button
+              onClick={handleGlobalReAuth}
+              disabled={oauthReauthLoading}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#f59e0b', color: '#000' }}
+            >
+              {oauthReauthLoading
+                ? <RefreshCw size={11} className="animate-spin" />
+                : <LogIn size={11} />}
+              {oauthReauthLoading ? t.oauthConnecting : t.oauthSessionReauthorize}
+            </button>
+          </div>
+        )}
 
         {/* Tool header */}
         <div className="px-4 pt-4 pb-4 md:px-6 md:pt-8 md:pb-6" style={{ borderBottom: '1px solid var(--bg-border)' }}>

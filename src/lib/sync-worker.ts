@@ -3,6 +3,7 @@ import { decrypt } from '@/lib/encryption';
 import { createAgent, createAgentForOAuth, fetchAllFollowers, blockAccounts, muteAccounts, fetchBlockedByFromClearSky, fetchPostInteractors, fetchListMembers, importExistingActions } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError, isValidAtUri } from '@/lib/request-security';
+import { isScopeError } from '@/lib/session-utils';
 
 interface SyncRow {
   sub_id: string;
@@ -272,7 +273,7 @@ async function syncAllSubscriptions(): Promise<void> {
         const errMsg = workErr instanceof Error ? workErr.message : String(workErr);
         // If the OAuth token is missing required scopes and app-password is available,
         // fall back to app-password for this run and flag the user for re-auth.
-        if (errMsg.includes('Missing required scope') && oauthAttempted && row.encrypted_password) {
+        if (isScopeError(errMsg) && oauthAttempted && row.encrypted_password) {
           console.warn(`[sync] OAuth scope insufficient for ${row.handle} — retrying with app-password, flagging for re-auth`);
           await query(
             'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
@@ -281,7 +282,7 @@ async function syncAllSubscriptions(): Promise<void> {
           const password = decrypt(row.encrypted_password);
           const appAgent = await createAgent(row.handle, password);
           await runSubscription(appAgent, appAgent.session?.did);
-        } else if (errMsg.includes('Missing required scope') && row.did) {
+        } else if (isScopeError(errMsg) && row.did) {
           // Pure OAuth user — no fallback, just flag for re-auth
           console.error(`[sync] ✗ subscription ${row.sub_id} failed: ${errMsg}`);
           await query(
@@ -327,3 +328,4 @@ export function startSyncWorker(): void {
   setTimeout(() => runSync('Initial run'), 10_000);
   setInterval(() => { runSync('Scheduled run').catch(() => {}); }, intervalMs);
 }
+
