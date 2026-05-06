@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
+import { getSessionUserId, isValidDid } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
 import { blockAccounts, createAgent } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
@@ -28,29 +29,29 @@ export async function POST(req: NextRequest) {
     type Source = typeof validSources[number];
     const resolvedSource: Source = validSources.includes(source as Source) ? (source as Source) : 'manual';
 
-    const sessionCreds = await getSessionCredentials();
+    const sessionAgent = await getSessionAgent();
     const isStateless = body.stateless === true;
-    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
-    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
-    const userId = await getSessionUserId();
+    const userId = sessionAgent?.userId ?? await getSessionUserId();
 
     const limited = checkApiRateLimit(req, {
       scope: 'bluesky:block',
-      identity: userId ?? handle,
+      identity: userId ?? body.handle,
       limit: 20,
       windowMs: 15 * 60 * 1000,
     });
     if (limited) return limited;
 
-    if (!handle || !password) {
+    let agent;
+    if (sessionAgent) {
+      agent = sessionAgent.agent;
+    } else if (isStateless && body.handle && body.password) {
+      agent = await createAgent(body.handle, body.password);
+    } else {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const agent = await createAgent(handle, password);
-
     const { succeeded, failed, succeededDids } = await blockAccounts(agent, dids);
 
-    // Log events asynchronously (fire-and-forget, non-fatal)
     let warning: string | undefined;
     try {
       await logBlockEvents(userId, succeededDids, 'block', resolvedSource);

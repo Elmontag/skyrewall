@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BskyAgent } from '@atproto/api';
-import { getSessionCredentials, getSessionUserId } from '@/lib/session';
+import { getSessionUserId } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
 import { fetchPostInteractors, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
@@ -47,25 +48,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'At least one interaction type is required' }, { status: 400 });
     }
 
-    const sessionCreds = await getSessionCredentials();
+    const sessionAgent = await getSessionAgent();
     const isStateless = body.stateless === true;
-    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
-    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
-    const userId = await getSessionUserId();
+    const userId = sessionAgent?.userId ?? await getSessionUserId();
 
     const limited = checkApiRateLimit(req, {
       scope: 'bluesky:post-interactions',
-      identity: userId ?? handle,
+      identity: userId ?? body.handle,
       limit: 20,
       windowMs: 15 * 60 * 1000,
     });
     if (limited) return limited;
 
-    if (!handle || !password) {
+    let agent;
+    if (sessionAgent) {
+      agent = sessionAgent.agent;
+    } else if (isStateless && body.handle && body.password) {
+      agent = await createAgent(body.handle, body.password);
+    } else {
       return NextResponse.json({ error: 'Credentials required' }, { status: 401 });
     }
-
-    const agent = await createAgent(handle, password);
 
     const atUri = await resolvePostUri(agent, postUrl.trim());
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
-import { checkMutuals, createAgent } from '@/lib/bluesky';
+import { isValidDid } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
+import { checkMutuals } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
 const MAX_DIDS = 5000;
@@ -10,15 +11,15 @@ export async function POST(req: NextRequest) {
     const originRejection = rejectCrossOrigin(req);
     if (originRejection) return originRejection;
 
-    const sessionCreds = await getSessionCredentials();
-    if (!sessionCreds) {
+    const sessionAgent = await getSessionAgent();
+    if (!sessionAgent) {
       return NextResponse.json({ error: 'Login required for mutual protection' }, { status: 401 });
     }
 
-    const userId = await getSessionUserId();
+    const userId = sessionAgent.userId;
     const limited = checkApiRateLimit(req, {
       scope: 'bluesky:check-mutuals',
-      identity: userId ?? sessionCreds.handle,
+      identity: userId,
       limit: 30,
       windowMs: 15 * 60 * 1000,
     });
@@ -37,9 +38,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'One or more DIDs are invalid' }, { status: 400 });
     }
 
-    const agent = await createAgent(sessionCreds.handle, sessionCreds.password);
-
-    const mutualDids = await checkMutuals(agent, dids);
+    const mutualDids = await checkMutuals(sessionAgent.agent, dids);
 
     return NextResponse.json({ mutualDids });
   } catch (err: unknown) {

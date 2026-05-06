@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getSessionCredentials, getSessionUserId, isValidDid } from '@/lib/session';
+import { getSessionUserId, isValidDid } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
 import { blockAccounts, createAgent } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
 import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
@@ -23,21 +24,24 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Invalid or missing dids' }), { status: 400 });
   }
 
-  const sessionCreds = await getSessionCredentials();
+  const sessionAgent = await getSessionAgent();
   const isStateless = body.stateless === true;
-  const handle = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
-  const password = sessionCreds?.password ?? (isStateless ? body.password : undefined);
-  const userId = await getSessionUserId();
+  const userId = sessionAgent?.userId ?? await getSessionUserId();
 
   const limited = checkApiRateLimit(req, {
     scope: 'bluesky:block-stream',
-    identity: userId ?? handle,
+    identity: userId ?? body.handle,
     limit: 20,
     windowMs: 15 * 60 * 1000,
   });
   if (limited) return limited;
 
-  if (!handle || !password) {
+  let agent;
+  if (sessionAgent) {
+    agent = sessionAgent.agent;
+  } else if (isStateless && body.handle && body.password) {
+    agent = await createAgent(body.handle, body.password);
+  } else {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
@@ -52,8 +56,6 @@ export async function POST(req: NextRequest) {
         new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`);
 
       try {
-        const agent = await createAgent(handle as string, password as string);
-
         const total = didList.length;
         const { succeeded, failed, succeededDids } = await blockAccounts(
           agent,

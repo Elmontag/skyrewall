@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionCredentials, getSessionUserId } from '@/lib/session';
+import { getSessionUserId } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
 import { fetchListMembers, createAgent } from '@/lib/bluesky';
-import { checkApiRateLimit, rejectCrossOrigin, isValidAtUri } from '@/lib/request-security';
-import { sanitizeError } from '@/lib/request-security';
+import { checkApiRateLimit, rejectCrossOrigin, isValidAtUri, sanitizeError } from '@/lib/request-security';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,22 +12,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { list_uri } = body;
 
-    // Prefer session credentials; fall back to explicit body credentials for stateless use
-    const sessionCreds = await getSessionCredentials();
+    const sessionAgent = await getSessionAgent();
     const isStateless = body.stateless === true;
-    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
-    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
-    const userId = await getSessionUserId();
+    const userId = sessionAgent?.userId ?? await getSessionUserId();
 
     const limited = checkApiRateLimit(req, {
       scope: 'bluesky:list-members',
-      identity: userId ?? handle,
+      identity: userId ?? body.handle,
       limit: 30,
       windowMs: 15 * 60 * 1000,
     });
     if (limited) return limited;
 
-    if (!handle || !password || !list_uri) {
+    if (!list_uri) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -35,7 +32,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid list URI' }, { status: 400 });
     }
 
-    const agent = await createAgent(handle, password);
+    let agent;
+    if (sessionAgent) {
+      agent = sessionAgent.agent;
+    } else if (isStateless && body.handle && body.password) {
+      agent = await createAgent(body.handle, body.password);
+    } else {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
 
     // SSE stream — emits { count } after each page, then { members, complete }
     // NOTE: This endpoint intentionally does NOT write to list_cache.

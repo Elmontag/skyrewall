@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionCredentials, getSessionUserId } from '@/lib/session';
+import { getSessionUserId } from '@/lib/session';
+import { getSessionAgent } from '@/lib/session-agent';
 import { fetchBlockedByFromClearSky, enrichProfileBatch, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 
@@ -12,11 +13,10 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
 
-    const sessionCreds = await getSessionCredentials();
+    const sessionAgent = await getSessionAgent();
     const isStateless = body.stateless === true;
-    const handle: string | undefined = sessionCreds?.handle ?? (isStateless ? body.handle : undefined);
-    const password: string | undefined = sessionCreds?.password ?? (isStateless ? body.password : undefined);
-    const userId = await getSessionUserId();
+    const handle: string | undefined = sessionAgent?.handle ?? (isStateless ? body.handle : undefined);
+    const userId = sessionAgent?.userId ?? await getSessionUserId();
 
     const limited = checkApiRateLimit(req, {
       scope: 'bluesky:check-blockedby',
@@ -36,7 +36,6 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Fetch who blocks this user from ClearSky (no credentials sent to ClearSky)
           const blockerDids = await fetchBlockedByFromClearSky(handle, MAX_RESULTS, (count) => {
             controller.enqueue(encode({ count }));
           });
@@ -46,13 +45,14 @@ export async function POST(req: NextRequest) {
             return;
           }
 
-          // Enrich with profile data if credentials are available
           let blockers;
-          if (password) {
-            const agent = await createAgent(handle, password);
+          if (sessionAgent) {
+            blockers = await enrichProfileBatch(sessionAgent.agent, blockerDids);
+          } else if (isStateless && body.handle && body.password) {
+            const agent = await createAgent(body.handle, body.password);
             blockers = await enrichProfileBatch(agent, blockerDids);
           } else {
-            blockers = blockerDids.map((did) => ({ did, handle: did }));
+            blockers = blockerDids.map((did: string) => ({ did, handle: did }));
           }
 
           controller.enqueue(encode({ blockers, complete: true }));
