@@ -133,7 +133,7 @@ export default function Home() {
             <div className="text-sm font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               {t.appName}
             </div>
-            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.1-delta</div>
+            <div className="font-mono" style={{ color: 'var(--accent)', fontSize: '10px' }}>v0.5.0</div>
           </div>
         </div>
 
