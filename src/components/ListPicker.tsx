@@ -18,10 +18,9 @@ interface Props {
   onSelect: (uri: string) => void;
 }
 
-type Tab = 'curate' | 'moderation' | 'url';
+type Tab = 'curate' | 'url';
 
 const CURATE_PURPOSE = 'app.bsky.graph.defs#curatelist';
-const MOD_PURPOSE = 'app.bsky.graph.defs#modlist';
 
 export default function ListPicker({ t, credentials, selectedUri, onSelect }: Props) {
   const [tab, setTab] = useState<Tab>('curate');
@@ -86,9 +85,7 @@ export default function ListPicker({ t, credentials, selectedUri, onSelect }: Pr
     color: active ? '#fff' : 'var(--text-secondary)',
   });
 
-  const filtered = lists.filter((l) =>
-    tab === 'curate' ? l.purpose === CURATE_PURPOSE : l.purpose === MOD_PURPOSE
-  );
+  const filtered = lists.filter((l) => l.purpose === CURATE_PURPOSE);
 
   return (
     <div className="rounded-xl overflow-hidden" style={card}>
@@ -96,9 +93,6 @@ export default function ListPicker({ t, credentials, selectedUri, onSelect }: Pr
       <div className="flex gap-1 p-2" style={{ borderBottom: '1px solid var(--bg-border)' }}>
         <button style={tabStyle(tab === 'curate')} onClick={() => setTab('curate')}>
           {t.listPickerMyLists}
-        </button>
-        <button style={tabStyle(tab === 'moderation')} onClick={() => setTab('moderation')}>
-          {t.listPickerModLists}
         </button>
         <button style={tabStyle(tab === 'url')} onClick={() => setTab('url')}>
           <Link size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info, Bell, List, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, VolumeX, ShieldX, Check, RefreshCw, Info, Bell, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
@@ -11,15 +11,16 @@ interface Props {
   t: Translations;
 }
 
-type Step = 'credentials' | 'target' | 'followers' | 'processing' | 'done';
+type Step = 'credentials' | 'target' | 'suboptions' | 'followers' | 'processing' | 'done';
 
 interface Result {
   succeeded: number;
   failed: number;
+  addedToList?: number;
+  listAddFailed?: number;
 }
 
-const STEPS: Step[] = ['credentials', 'target', 'followers'];
-const STEP_LABELS = (t: Translations) => [t.step1Title, t.step2Title, t.followerListTitle];
+
 
 export default function BlockMuteTool({ mode, t }: Props) {
   const [step, setStep] = useState<Step>('credentials');
@@ -35,6 +36,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [result, setResult] = useState<Result | null>(null);
   const [mutualDids, setMutualDids] = useState<Set<string>>(new Set());
   const [protectMutuals, setProtectMutuals] = useState(true);
+  const [followingDids, setFollowingDids] = useState<Set<string>>(new Set());
+  const [protectFollowings, setProtectFollowings] = useState(true);
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number; startedAt: number } | null>(null);
@@ -46,9 +49,11 @@ export default function BlockMuteTool({ mode, t }: Props) {
 
   // List source state
   const [source, setSource] = useState<'followers' | 'list'>('followers');
-  const [listUri, setListUri] = useState('');
+  const [, setListUri] = useState('');
   const [excludeListUri, setExcludeListUri] = useState('');
   const [showExclude, setShowExclude] = useState(false);
+  const [addToListUri, setAddToListUri] = useState('');
+  const [showAddToList, setShowAddToList] = useState(false);
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
       .then(async (r) => {
@@ -65,7 +70,13 @@ export default function BlockMuteTool({ mode, t }: Props) {
       .catch(() => {});
   }, []);
 
-  const stepIndex = STEPS.indexOf(step);
+  const displayedSteps: Step[] = prefilled
+    ? ['target', 'suboptions', 'followers']
+    : ['credentials', 'target', 'followers'];
+  const displayedStepLabels = prefilled
+    ? [t.step2Title, t.subOptionsTitle, t.followerListTitle]
+    : [t.step1Title, t.step2Title, t.followerListTitle];
+  const stepIndex = displayedSteps.indexOf(step);
 
   const handleStep1 = () => {
     if (!handle.trim()) { setError(t.errorHandleRequired); return; }
@@ -74,9 +85,18 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setStep('target');
   };
 
+  const handleGoToSubOptions = () => {
+    if (source === 'followers' && !targetHandle.trim()) { setError(t.errorTargetRequired); return; }
+    setError('');
+    if (prefilled) {
+      setStep('suboptions');
+      return;
+    }
+    void handleLoadFollowers();
+  };
+
   const handleLoadFollowers = async () => {
     if (source === 'followers' && !targetHandle.trim()) { setError(t.errorTargetRequired); return; }
-    if (source === 'list' && !listUri.trim()) { setError(t.listPickerUrlInvalid); return; }
     setError('');
     setFetchProgress({ count: 0, loading: true });
     setStep('followers');
@@ -123,16 +143,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
     };
 
     try {
-      let fetchEndpoint: string;
-      let fetchBody: Record<string, unknown>;
-
-      if (source === 'list') {
-        fetchEndpoint = '/api/bluesky/list-members';
-        fetchBody = { ...credFields, list_uri: listUri };
-      } else {
-        fetchEndpoint = '/api/bluesky/followers';
-        fetchBody = { ...credFields, targetHandle };
-      }
+      const fetchEndpoint = '/api/bluesky/followers';
+      const fetchBody: Record<string, unknown> = { ...credFields, targetHandle };
 
       const res = await fetch(fetchEndpoint, {
         method: 'POST',
@@ -161,11 +173,16 @@ export default function BlockMuteTool({ mode, t }: Props) {
         } catch { /* non-fatal — proceed without exclusion */ }
       }
 
-      // Check mutuals + actioned if session is active
+      // Check mutuals + followings + actioned if session is active
       if (prefilled && fetched.length > 0) {
         const dids = fetched.map((f) => f.did);
-        const [mRes, aRes] = await Promise.all([
+        const [mRes, fRes, aRes] = await Promise.all([
           fetch('/api/bluesky/check-mutuals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+          fetch('/api/bluesky/check-followings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ dids }),
@@ -178,16 +195,22 @@ export default function BlockMuteTool({ mode, t }: Props) {
         ]);
 
         let mSet = new Set<string>();
+        let fSet = new Set<string>();
         if (mRes?.ok) {
           const mData = await mRes.json();
           mSet = new Set<string>(mData.mutualDids ?? []);
           setMutualDids(mSet);
         }
+        if (fRes?.ok) {
+          const fData = await fRes.json();
+          fSet = new Set<string>(fData.followingDids ?? []);
+          setFollowingDids(fSet);
+        }
         if (aRes?.ok) {
           const aData = await aRes.json();
           setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
         }
-        setSelected(new Set(fetched.filter((f) => !mSet.has(f.did) && !excludeSet.has(f.did)).map((f) => f.did)));
+        setSelected(new Set(fetched.filter((f) => !(protectMutuals && mSet.has(f.did)) && !(protectFollowings && fSet.has(f.did)) && !excludeSet.has(f.did)).map((f) => f.did)));
       } else {
         setSelected(new Set(fetched.filter((f) => !excludeSet.has(f.did)).map((f) => f.did)));
       }
@@ -203,9 +226,15 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const handleSaveInlineSub = async () => {
     setInlineSubSaving(true);
     try {
-      const subBody = source === 'list'
-        ? { target_handle: listUri, mode, sub_type: 'list', include_followers: false, config: { list_uri: listUri, ...(excludeListUri.trim().startsWith('at://') ? { exclude_list_uri: excludeListUri } : {}) } }
-        : { target_handle: targetHandle, mode, sub_type: 'follower', include_followers: includeFollowers, ...(excludeListUri.trim().startsWith('at://') ? { config: { exclude_list_uri: excludeListUri } } : {}) };
+      const protectConfig = {
+        ...(protectMutuals ? { protect_mutuals: true } : {}),
+        ...(protectFollowings ? { protect_followings: true } : {}),
+      };
+      const subBody = { target_handle: targetHandle, mode, sub_type: 'follower', include_followers: includeFollowers, config: {
+        ...(excludeListUri.trim().startsWith('at://') ? { exclude_list_uri: excludeListUri } : {}),
+        ...protectConfig,
+        ...(addToListUri.trim().startsWith('at://') ? { add_to_list_uri: addToListUri } : {}),
+      } };
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,26 +254,43 @@ export default function BlockMuteTool({ mode, t }: Props) {
   }, []);
 
   const handleSelectAll = useCallback(() => {
-    // When protect is on, exclude protected mutuals from select-all
-    setSelected(new Set(followers.filter((f) => !(protectMutuals && mutualDids.has(f.did))).map((f) => f.did)));
-  }, [followers, protectMutuals, mutualDids]);
+    setSelected(new Set(followers.filter((f) =>
+      !(protectMutuals && mutualDids.has(f.did)) &&
+      !(protectFollowings && followingDids.has(f.did))
+    ).map((f) => f.did)));
+  }, [followers, protectMutuals, mutualDids, protectFollowings, followingDids]);
 
   const handleDeselectAll = useCallback(() => setSelected(new Set()), []);
 
   const handleProtectMutualsChange = (value: boolean) => {
     setProtectMutuals(value);
     if (!value) {
-      // Toggling protection OFF → auto-select the mutuals
       setSelected((prev) => {
         const next = new Set(prev);
         for (const did of mutualDids) next.add(did);
         return next;
       });
     } else {
-      // Toggling protection ON → deselect mutuals
       setSelected((prev) => {
         const next = new Set(prev);
         for (const did of mutualDids) next.delete(did);
+        return next;
+      });
+    }
+  };
+
+  const handleProtectFollowingsChange = (value: boolean) => {
+    setProtectFollowings(value);
+    if (!value) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const did of followingDids) next.add(did);
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const did of followingDids) next.delete(did);
         return next;
       });
     }
@@ -267,7 +313,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       const res = await fetch(streamEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...credFields, dids }),
+        body: JSON.stringify({ ...credFields, dids, add_to_list_uri: addToListUri.trim().startsWith('at://') ? addToListUri : undefined }),
       });
       if (!res.body) throw new Error('No stream body');
       const reader = res.body.getReader();
@@ -287,7 +333,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
               setStreamProgress(prev => ({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0, startedAt: prev?.startedAt ?? Date.now() }));
               if (event.complete) {
                 if (event.warning) setProcessError(event.warning);
-                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0, addedToList: event.addedToList, listAddFailed: event.listAddFailed });
                 setStep('done');
                 return;
               }
@@ -309,6 +355,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setTargetHandle('');
     setFollowers([]); setSelected(new Set());
     setMutualDids(new Set()); setProtectMutuals(true);
+    setFollowingDids(new Set()); setProtectFollowings(true);
     setActionedDids({ blocked: new Set(), muted: new Set() }); setHideActioned(false);
     setInlineSubSaved(false);
     setStreamProgress(null);
@@ -320,6 +367,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setListUri('');
     setExcludeListUri('');
     setShowExclude(false);
+    setAddToListUri('');
+    setShowAddToList(false);
     // If session credentials were prefilled, go back to target; otherwise back to credentials
     if (prefilled) {
       setStep('target');
@@ -348,7 +397,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       {/* Step indicator */}
       {step !== 'done' && step !== 'processing' && (
         <div className="flex items-center gap-0">
-          {STEP_LABELS(t).map((label, i) => {
+          {displayedStepLabels.map((label, i) => {
             const active = stepIndex === i;
             const done = stepIndex > i;
             return (
@@ -439,92 +488,44 @@ export default function BlockMuteTool({ mode, t }: Props) {
             </div>
           )}
 
-          {/* Source selector */}
           <div>
-            <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>{t.listSource}</label>
-            <div className="flex flex-col gap-2">
-              {([
-                { value: 'followers', label: t.listSourceFollowers },
-                { value: 'list', label: t.listSourceList },
-              ] as const).map(({ value, label }) => (
-                <label
-                  key={value}
-                  className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
-                  style={{
-                    backgroundColor: source === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                    border: `1px solid ${source === value ? 'var(--accent)' : 'var(--bg-border)'}`,
-                  }}
-                  onClick={() => setSource(value)}
-                >
-                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                    style={{ borderColor: source === value ? 'var(--accent)' : 'var(--bg-border)' }}>
-                    {source === value && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />}
-                  </div>
-                  <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
-                    {value === 'list' && <List size={13} style={{ color: 'var(--text-secondary)' }} />}
-                    {label}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
+            <input
+              type="text"
+              value={targetHandle}
+              onChange={(e) => setTargetHandle(e.target.value)}
+              placeholder={t.targetHandlePlaceholder}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
+              style={input}
+              onKeyDown={(e) => e.key === 'Enter' && handleGoToSubOptions()}
+            />
           </div>
-
-          {/* Target: account handle (followers source) */}
-          {source === 'followers' && (
-            <>
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.targetHandle}</label>
-                <input
-                  type="text"
-                  value={targetHandle}
-                  onChange={(e) => setTargetHandle(e.target.value)}
-                  placeholder={t.targetHandlePlaceholder}
-                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-                  style={input}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLoadFollowers()}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                {[
-                  { value: true, label: t.includeFollowers },
-                  { value: false, label: t.withoutFollowers },
-                ].map(({ value, label }) => (
-                  <label
-                    key={String(value)}
-                    className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
-                    style={{
-                      backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
-                      border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
-                    }}
-                    onClick={() => setIncludeFollowers(value)}
-                  >
-                    <div
-                      className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                      style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
-                    >
-                      {includeFollowers === value && (
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                      )}
-                    </div>
-                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
-                  </label>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Target: list picker (list source) */}
-          {source === 'list' && (
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.listPickerTitle}</label>
-              <ListPicker
-                t={t}
-                credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
-                selectedUri={listUri}
-                onSelect={setListUri}
-              />
-            </div>
-          )}
+          <div className="flex flex-col gap-2">
+            {[
+              { value: true, label: t.includeFollowers },
+              { value: false, label: t.withoutFollowers },
+            ].map(({ value, label }) => (
+              <label
+                key={String(value)}
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+                style={{
+                  backgroundColor: includeFollowers === value ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                  border: `1px solid ${includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)'}`,
+                }}
+                onClick={() => setIncludeFollowers(value)}
+              >
+                <div
+                  className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                  style={{ borderColor: includeFollowers === value ? 'var(--accent)' : 'var(--bg-border)' }}
+                >
+                  {includeFollowers === value && (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                  )}
+                </div>
+                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</span>
+              </label>
+            ))}
+          </div>
 
           {/* Exclusion list (collapsible, both sources) */}
           <div>
@@ -553,38 +554,103 @@ export default function BlockMuteTool({ mode, t }: Props) {
           <div className="flex gap-3">
             <button
               onClick={() => setStep('credentials')}
-              className="px-4 py-2.5 rounded-xl text-sm transition-colors"
+              className="px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center"
               style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
             >
-              {t.back}
+              <ArrowLeft size={16} />
             </button>
             <button
-              onClick={handleLoadFollowers}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
+              onClick={handleGoToSubOptions}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center"
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
             >
-              {source === 'list' ? t.next : (includeFollowers ? t.loadFollowers : t.next)}
+              <ArrowRight size={16} />
             </button>
           </div>
-          {/* Inline subscription card (session only, when target entered) */}
-          {prefilled && (source === 'list' ? listUri : targetHandle.trim()) && (
-            <div className="p-4 rounded-xl flex items-center justify-between gap-3"
-              style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--bg-border)' }}>
-              <div className="flex items-center gap-2 min-w-0">
-                <Bell size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.saveAsSub}</span>
+        </div>
+      )}
+
+      {step === 'suboptions' && (
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subOptionsTitle}</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{t.subOptionsDesc}</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                style={{ borderColor: protectMutuals ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: protectMutuals ? 'var(--accent)' : 'transparent' }}
+                onClick={() => handleProtectMutualsChange(!protectMutuals)}>
+                {protectMutuals && <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
               </div>
-              {inlineSubSaved
-                ? <span className="text-xs flex items-center gap-1" style={{ color: 'var(--success)' }}><CheckCircle2 size={13} /> {t.subSaved}</span>
-                : <button onClick={handleSaveInlineSub} disabled={inlineSubSaving}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid rgba(0,133,255,0.2)' }}>
-                    {inlineSubSaving ? <RefreshCw size={11} className="animate-spin" /> : <Bell size={11} />}
-                    {t.saveAsSub}
-                  </button>
-              }
+              <input type="checkbox" checked={protectMutuals} onChange={(e) => handleProtectMutualsChange(e.target.checked)} className="sr-only" />
+              {t.subProtectMutuals}
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                style={{ borderColor: protectFollowings ? 'rgba(245,158,11,0.8)' : 'var(--bg-border)', backgroundColor: protectFollowings ? 'rgba(245,158,11,0.8)' : 'transparent' }}
+                onClick={() => handleProtectFollowingsChange(!protectFollowings)}>
+                {protectFollowings && <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+              </div>
+              <input type="checkbox" checked={protectFollowings} onChange={(e) => handleProtectFollowingsChange(e.target.checked)} className="sr-only" />
+              {t.subProtectFollowings}
+            </label>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAddToList((v) => !v)}
+              className="flex items-center gap-2 text-xs font-medium transition-colors"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showAddToList ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}
+            >
+              {showAddToList ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {t.addToListToggle}
+            </button>
+            {showAddToList && (
+              <div className="mt-3">
+                <ListPicker
+                  t={t}
+                  credentials={prefilled ? undefined : (handle && password ? { handle, password } : undefined)}
+                  selectedUri={addToListUri}
+                  onSelect={setAddToListUri}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep('target')}
+                className="px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center"
+                style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
+              >
+                <ArrowLeft size={16} />
+              </button>
+              {targetHandle.trim() && (
+                inlineSubSaved
+                  ? <span className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium"
+                      style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: 'var(--success)' }}>
+                      <CheckCircle2 size={14} /> {t.subSaved}
+                    </span>
+                  : <button onClick={handleSaveInlineSub} disabled={inlineSubSaving}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                      style={{ backgroundColor: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.25)' }}>
+                      {inlineSubSaving ? <RefreshCw size={13} className="animate-spin" /> : <Bell size={13} />}
+                      {t.saveAsSub}
+                    </button>
+              )}
+              <button
+                onClick={handleLoadFollowers}
+                className="px-3 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center"
+                style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+              >
+                <ArrowRight size={16} />
+              </button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -616,6 +682,9 @@ export default function BlockMuteTool({ mode, t }: Props) {
                     mutualDids={mutualDids}
                     protectMutuals={protectMutuals}
                     onProtectMutualsChange={handleProtectMutualsChange}
+                    followingDids={followingDids}
+                    protectFollowings={protectFollowings}
+                    onProtectFollowingsChange={handleProtectFollowingsChange}
                     actionedDids={actionedDids}
                     hideActioned={hideActioned}
                     onHideActionedChange={setHideActioned}
@@ -623,11 +692,11 @@ export default function BlockMuteTool({ mode, t }: Props) {
               }
               <div className="flex gap-3 pt-1">
                 <button
-                  onClick={() => setStep('target')}
-                  className="px-4 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2"
+                  onClick={() => setStep(prefilled ? 'suboptions' : 'target')}
+                  className="px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center"
                   style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}
                 >
-                  <ArrowLeft size={14} /> {t.back}
+                  <ArrowLeft size={16} />
                 </button>
                 <button
                   onClick={handleConfirm}
@@ -721,6 +790,12 @@ export default function BlockMuteTool({ mode, t }: Props) {
                 <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
               </div>
             )}
+            {result.addedToList !== undefined && result.addedToList > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: 'var(--text-secondary)' }}>{t.addToListResult}</span>
+                <span className="font-semibold" style={{ color: 'var(--success)' }}>{result.addedToList}</span>
+              </div>
+            )}
             {processError && (
               <div className="text-xs pt-2" style={{ color: 'var(--danger)' }}>
                 {processError}
@@ -738,4 +813,5 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
     </div>
   );
-}
+}
+

@@ -31,8 +31,8 @@ export default function ReblockTool({ t }: Props) {
   const [hideActioned, setHideActioned] = useState(true);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number; startedAt: number } | null>(null);
   const [processError, setProcessError] = useState('');
-
   const [fetchCount, setFetchCount] = useState(0);
+  const [loadingPhase, setLoadingPhase] = useState<'fetching' | 'filtering'>('fetching');
 
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
@@ -103,20 +103,33 @@ export default function ReblockTool({ t }: Props) {
       setBlockers(fetched);
       setSelected(new Set(fetched.map((f) => f.did)));
 
-      // Check already-actioned
+      // Check already-actioned (session only) — stay in loading until done
       if (prefilled && fetched.length > 0) {
-        fetch('/api/bluesky/check-actioned', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
-        }).then(async (aRes) => {
-          if (aRes.ok) {
-            const aData = await aRes.json();
-            setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
+        setLoadingPhase('filtering');
+        const dids = fetched.map((f) => f.did);
+        try {
+          const aRes = await fetch('/api/bluesky/check-actioned', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null);
+
+          if (aRes?.ok) {
+            const aData = await aRes.json().catch(() => ({}));
+            const actionedBlocked = new Set<string>(aData.blocked ?? []);
+            const actionedMuted = new Set<string>(aData.muted ?? []);
+            setActionedDids({ blocked: actionedBlocked, muted: actionedMuted });
+            setSelected((prev) => {
+              const next = new Set(prev);
+              for (const d of actionedBlocked) next.delete(d);
+              for (const d of actionedMuted) next.delete(d);
+              return next;
+            });
           }
-        }).catch(() => {});
+        } catch { /* ignore — show list anyway */ }
       }
 
+      setLoadingPhase('fetching');
       setStep('list');
     } catch {
       setError(t.errorNetwork);
@@ -180,7 +193,7 @@ export default function ReblockTool({ t }: Props) {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_handle: handle, mode, sub_type: 'reblock', include_followers: false }),
+        body: JSON.stringify({ target_handle: handle, mode, sub_type: 'reblock', include_followers: false, config: {} }),
       });
       if (res.ok) setSubscriptionSaved(true);
       else setError(t.errorGeneral);
@@ -206,6 +219,7 @@ export default function ReblockTool({ t }: Props) {
     setStreamProgress(null);
     setProcessError('');
     setActionedDids({ blocked: new Set(), muted: new Set() });
+    setLoadingPhase('fetching');
     setStep(prefilled ? 'ready' : 'credentials');
   };
 
@@ -326,12 +340,16 @@ export default function ReblockTool({ t }: Props) {
             style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
             <RefreshCw size={26} strokeWidth={1.5} className="pulse animate-spin" />
           </div>
-          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t.reblockScanning}</p>
-          {fetchCount > 0 && (
-            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {t.fetchingCount.replace('{count}', String(fetchCount))}
-            </p>
-          )}
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            {loadingPhase === 'filtering' ? t.reblockCheckingHistory : t.reblockScanning}
+          </p>
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            {loadingPhase === 'filtering'
+              ? t.reblockFilteringActioned
+              : fetchCount > 0
+                ? t.fetchingCount.replace('{count}', String(fetchCount))
+                : t.loading}
+          </p>
           <div className="w-full h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
             <div className="h-full progress-bar" style={{ width: '100%' }} />
           </div>

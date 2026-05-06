@@ -1,9 +1,10 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, MessageSquareX, ShieldX, VolumeX, Info, Bell, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, MessageSquareX, ShieldX, VolumeX, Info, Bell, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Follower, Mode } from '@/types';
 import type { Translations } from '@/i18n/en';
 import FollowerList from './FollowerList';
+import ListPicker from './ListPicker';
 
 interface Props {
   t: Translations;
@@ -12,6 +13,8 @@ interface Props {
 interface Result {
   succeeded: number;
   failed: number;
+  addedToList?: number;
+  listAddFailed?: number;
 }
 
 type InteractionType = 'likes' | 'reposts' | 'quotes';
@@ -25,17 +28,24 @@ export default function PostInteractionTool({ t }: Props) {
   const [interactors, setInteractors] = useState<Follower[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<Mode>('block');
-  const [step, setStep] = useState<'credentials' | 'ready' | 'loading' | 'list' | 'processing' | 'done'>('credentials');
+  const [step, setStep] = useState<'credentials' | 'ready' | 'loading' | 'suboptions' | 'list' | 'processing' | 'done'>('credentials');
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [actionedDids, setActionedDids] = useState<{ blocked: Set<string>; muted: Set<string> }>({ blocked: new Set(), muted: new Set() });
   const [hideActioned, setHideActioned] = useState(false);
+  const [mutualDids, setMutualDids] = useState<Set<string>>(new Set());
+  const [protectMutuals, setProtectMutuals] = useState(true);
+  const [followingDids, setFollowingDids] = useState<Set<string>>(new Set());
+  const [protectFollowings, setProtectFollowings] = useState(true);
   const [savingPostSub, setSavingPostSub] = useState(false);
   const [postSubSaved, setPostSubSaved] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ done: number; total: number; succeeded: number; failed: number; startedAt: number } | null>(null);
   const [processError, setProcessError] = useState('');
 
   const [fetchCount, setFetchCount] = useState(0);
+  const [loadingPhase, setLoadingPhase] = useState<'fetching' | 'filtering'>('fetching');
+  const [addToListUri, setAddToListUri] = useState('');
+  const [showAddToList, setShowAddToList] = useState(false);
 
   useEffect(() => {
     fetch('/api/account', { method: 'GET' })
@@ -58,6 +68,7 @@ export default function PostInteractionTool({ t }: Props) {
     if (!prefilled && (!handle.trim() || !password.trim())) { setError(t.errorHandleRequired); return; }
     setError('');
     setFetchCount(0);
+    setLoadingPhase('fetching');
     setStep('loading');
 
     const credFields = prefilled ? {} : { handle, password, stateless: true };
@@ -106,21 +117,45 @@ export default function PostInteractionTool({ t }: Props) {
       setInteractors(fetched);
       setSelected(new Set(fetched.map((f) => f.did)));
 
-      // Check already-actioned
       if (prefilled && fetched.length > 0) {
-        fetch('/api/bluesky/check-actioned', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dids: fetched.map((f) => f.did) }),
-        }).then(async (aRes) => {
-          if (aRes.ok) {
-            const aData = await aRes.json();
-            setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
-          }
-        }).catch(() => {});
+        const dids = fetched.map((f) => f.did);
+        setLoadingPhase('filtering');
+        const [mRes, fRes, aRes] = await Promise.all([
+          fetch('/api/bluesky/check-mutuals', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+          fetch('/api/bluesky/check-followings', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+          fetch('/api/bluesky/check-actioned', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dids }),
+          }).catch(() => null),
+        ]);
+
+        let mSet = new Set<string>();
+        let fSet = new Set<string>();
+        if (mRes?.ok) {
+          const mData = await mRes.json();
+          mSet = new Set<string>(mData.mutualDids ?? []);
+          setMutualDids(mSet);
+        }
+        if (fRes?.ok) {
+          const fData = await fRes.json();
+          fSet = new Set<string>(fData.followingDids ?? []);
+          setFollowingDids(fSet);
+        }
+        if (aRes?.ok) {
+          const aData = await aRes.json();
+          setActionedDids({ blocked: new Set<string>(aData.blocked ?? []), muted: new Set<string>(aData.muted ?? []) });
+        }
+        setSelected(new Set(fetched.filter((f) => !(protectMutuals && mSet.has(f.did)) && !(protectFollowings && fSet.has(f.did))).map((f) => f.did)));
       }
 
-      setStep('list');
+      setLoadingPhase('fetching');
+      setStep(prefilled ? 'suboptions' : 'list');
     } catch {
       setError(t.errorNetwork);
       setStep(prefilled ? 'ready' : 'credentials');
@@ -138,7 +173,7 @@ export default function PostInteractionTool({ t }: Props) {
       const res = await fetch(streamEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...credFields, dids, source: 'interaction' }),
+        body: JSON.stringify({ ...credFields, dids, source: 'interaction', add_to_list_uri: addToListUri.trim().startsWith('at://') ? addToListUri : undefined }),
       });
       if (!res.body) throw new Error('No stream body');
       const reader = res.body.getReader();
@@ -158,7 +193,7 @@ export default function PostInteractionTool({ t }: Props) {
               setStreamProgress(prev => ({ done: event.done ?? 0, total: event.total ?? dids.length, succeeded: event.succeeded ?? 0, failed: event.failed ?? 0, startedAt: prev?.startedAt ?? Date.now() }));
               if (event.complete) {
                 if (event.warning) setProcessError(event.warning);
-                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0 });
+                setResult({ succeeded: event.succeeded ?? 0, failed: event.failed ?? 0, addedToList: event.addedToList, listAddFailed: event.listAddFailed });
                 setStep('done');
                 return;
               }
@@ -184,6 +219,31 @@ export default function PostInteractionTool({ t }: Props) {
     });
   }, []);
 
+  const handleProtectMutualsChange = (value: boolean) => {
+    setProtectMutuals(value);
+    if (!value) {
+      setSelected((prev) => { const next = new Set(prev); for (const did of mutualDids) next.add(did); return next; });
+    } else {
+      setSelected((prev) => { const next = new Set(prev); for (const did of mutualDids) next.delete(did); return next; });
+    }
+  };
+
+  const handleProtectFollowingsChange = (value: boolean) => {
+    setProtectFollowings(value);
+    if (!value) {
+      setSelected((prev) => { const next = new Set(prev); for (const did of followingDids) next.add(did); return next; });
+    } else {
+      setSelected((prev) => { const next = new Set(prev); for (const did of followingDids) next.delete(did); return next; });
+    }
+  };
+
+  const handleSelectAll = useCallback(() => {
+    setSelected(new Set(interactors.filter((f) =>
+      !(protectMutuals && mutualDids.has(f.did)) &&
+      !(protectFollowings && followingDids.has(f.did))
+    ).map((f) => f.did)));
+  }, [interactors, protectMutuals, mutualDids, protectFollowings, followingDids]);
+
   const toggleType = (type: InteractionType) => {
     setTypes((prev) => {
       const next = new Set(prev);
@@ -199,6 +259,10 @@ export default function PostInteractionTool({ t }: Props) {
     setStreamProgress(null);
     setProcessError('');
     setActionedDids({ blocked: new Set(), muted: new Set() });
+    setMutualDids(new Set()); setProtectMutuals(true);
+    setFollowingDids(new Set()); setProtectFollowings(true);
+    setLoadingPhase('fetching');
+    setAddToListUri(''); setShowAddToList(false);
     setPostSubSaved(false);
     setStep(prefilled ? 'ready' : 'credentials');
   };
@@ -213,7 +277,12 @@ export default function PostInteractionTool({ t }: Props) {
           target_handle: postUrl,
           mode,
           sub_type: 'postinteraction',
-          config: { types: [...types] },
+          config: {
+            types: [...types],
+            ...(protectMutuals ? { protect_mutuals: true } : {}),
+            ...(protectFollowings ? { protect_followings: true } : {}),
+            ...(addToListUri.trim().startsWith('at://') ? { add_to_list_uri: addToListUri } : {}),
+          },
         }),
       });
       if (res.ok || res.status === 409) {
@@ -331,8 +400,81 @@ export default function PostInteractionTool({ t }: Props) {
               {t.fetchingCount.replace('{count}', String(fetchCount))}
             </p>
           )}
+          {loadingPhase === 'filtering' && (
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.postCheckingHistory}</p>
+          )}
           <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-border)' }}>
             <div className="h-full progress-bar" style={{ width: '100%' }} />
+          </div>
+        </div>
+      )}
+
+      {step === 'suboptions' && (
+        <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subOptionsTitle}</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{t.subOptionsDesc}</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                style={{ borderColor: protectMutuals ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: protectMutuals ? 'var(--accent)' : 'transparent' }}
+                onClick={() => handleProtectMutualsChange(!protectMutuals)}>
+                {protectMutuals && <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+              </div>
+              <input type="checkbox" checked={protectMutuals} onChange={(e) => handleProtectMutualsChange(e.target.checked)} className="sr-only" />
+              {t.subProtectMutuals}
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                style={{ borderColor: protectFollowings ? 'rgba(245,158,11,0.8)' : 'var(--bg-border)', backgroundColor: protectFollowings ? 'rgba(245,158,11,0.8)' : 'transparent' }}
+                onClick={() => handleProtectFollowingsChange(!protectFollowings)}>
+                {protectFollowings && <svg width="8" height="6" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+              </div>
+              <input type="checkbox" checked={protectFollowings} onChange={(e) => handleProtectFollowingsChange(e.target.checked)} className="sr-only" />
+              {t.subProtectFollowings}
+            </label>
+          </div>
+
+          <div>
+            <button type="button" onClick={() => setShowAddToList((v) => !v)}
+              className="flex items-center gap-2 text-xs font-medium transition-colors"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showAddToList ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}>
+              {showAddToList ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {t.addToListToggle}
+            </button>
+            {showAddToList && (
+              <div className="mt-3">
+                <ListPicker t={t} selectedUri={addToListUri} onSelect={setAddToListUri} />
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep('ready')}
+              className="px-3 py-2.5 rounded-xl text-sm flex items-center justify-center"
+              style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
+              <ArrowLeft size={16} />
+            </button>
+            {postUrl.trim() && (
+              postSubSaved
+                ? <span className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium"
+                    style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: 'var(--success)' }}>
+                    <CheckCircle2 size={14} /> {t.subSaved}
+                  </span>
+                : <button onClick={handleSavePostSub} disabled={savingPostSub}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    style={{ backgroundColor: 'rgba(249,115,22,0.08)', color: '#f97316', border: '1px solid rgba(249,115,22,0.25)' }}>
+                    {savingPostSub ? <RefreshCw size={13} className="animate-spin" /> : <Bell size={13} />}
+                    {t.saveAsSub}
+                  </button>
+            )}
+            <button onClick={() => setStep('list')}
+              className="px-3 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center"
+              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
+              <ArrowRight size={16} />
+            </button>
           </div>
         </div>
       )}
@@ -349,36 +491,25 @@ export default function PostInteractionTool({ t }: Props) {
           {interactors.length === 0
             ? <p className="text-sm py-4 text-center" style={{ color: 'var(--text-secondary)' }}>{t.postNoInteractors}</p>
             : <>
-                {/* Inline subscription card */}
-                {prefilled && postUrl.trim() && (
-                  <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}>
-                    <div className="flex items-center gap-2 text-sm font-medium" style={{ color: '#f97316' }}>
-                      <Bell size={13} /> {t.saveAsSub}
-                    </div>
-                    {postSubSaved
-                      ? <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--success)' }}><CheckCircle2 size={12} /> {t.subSaved}</span>
-                      : <button onClick={handleSavePostSub} disabled={savingPostSub}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 flex items-center gap-1.5"
-                          style={{ backgroundColor: 'rgba(249,115,22,0.12)', color: '#f97316', border: '1px solid rgba(249,115,22,0.25)' }}>
-                          {savingPostSub ? <RefreshCw size={11} className="animate-spin" /> : null}
-                          {t.reblockCreateSub}
-                        </button>
-                    }
-                  </div>
-                )}
                 <FollowerList followers={interactors} selected={selected}
                   onToggle={handleToggle}
-                  onSelectAll={() => setSelected(new Set(interactors.map((f) => f.did)))}
+                  onSelectAll={handleSelectAll}
                   onDeselectAll={() => setSelected(new Set())}
                   t={t}
+                  mutualDids={mutualDids}
+                  protectMutuals={protectMutuals}
+                  onProtectMutualsChange={handleProtectMutualsChange}
+                  followingDids={followingDids}
+                  protectFollowings={protectFollowings}
+                  onProtectFollowingsChange={handleProtectFollowingsChange}
                   actionedDids={actionedDids}
                   hideActioned={hideActioned}
                   onHideActionedChange={setHideActioned} />
                 <div className="flex gap-3 pt-1">
-                  <button onClick={() => setStep('ready')}
-                    className="px-4 py-2.5 rounded-xl text-sm"
+                  <button onClick={() => setStep(prefilled ? 'suboptions' : 'ready')}
+                    className="px-3 py-2.5 rounded-xl text-sm flex items-center justify-center"
                     style={{ border: '1px solid var(--bg-border)', color: 'var(--text-secondary)' }}>
-                    {t.back}
+                    <ArrowLeft size={16} />
                   </button>
                   <button onClick={handleConfirm} disabled={selected.size === 0}
                     className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
@@ -463,6 +594,12 @@ export default function PostInteractionTool({ t }: Props) {
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: 'var(--text-secondary)' }}>{t.failed}</span>
                 <span className="font-semibold" style={{ color: 'var(--danger)' }}>{result.failed}</span>
+              </div>
+            )}
+            {result.addedToList !== undefined && result.addedToList > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: 'var(--text-secondary)' }}>{t.addToListResult}</span>
+                <span className="font-semibold" style={{ color: 'var(--success)' }}>{result.addedToList}</span>
               </div>
             )}
             {processError && (

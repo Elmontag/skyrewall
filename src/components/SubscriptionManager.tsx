@@ -1,9 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Trash2, Plus, RefreshCw, Settings, List, ChevronDown, ChevronUp } from 'lucide-react';
-import type { Subscription, Mode } from '@/types';
+import { AlertTriangle, Trash2, RefreshCw, Settings, List } from 'lucide-react';
+import type { Subscription } from '@/types';
 import type { Translations } from '@/i18n/en';
-import ListPicker from './ListPicker';
 
 interface Props {
   t: Translations;
@@ -14,13 +13,7 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [syncStatus, setSyncStatus] = useState<{ intervalMinutes: number; nextRunAt: string | null; lastRunAt: string | null } | null>(null);
-  const [newTarget, setNewTarget] = useState('');
-  const [newMode, setNewMode] = useState<Mode>('block');
-  const [newIncludeFollowers, setNewIncludeFollowers] = useState(true);
-  const [newSubType, setNewSubType] = useState<'follower' | 'reblock' | 'postinteraction' | 'list'>('follower');
-  const [newListUri, setNewListUri] = useState('');
-  const [newExcludeListUri, setNewExcludeListUri] = useState('');
-  const [showNewExclude, setShowNewExclude] = useState(false);
+  const [patchingSubId, setPatchingSubId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -50,42 +43,6 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
     } catch { /* ignore */ }
   };
 
-  const handleAddSubscription = async () => {
-    if (newSubType === 'list' && !newListUri.trim().startsWith('at://')) {
-      setError(t.listPickerUrlInvalid);
-      return;
-    }
-    if (newSubType !== 'list' && !newTarget.trim()) return;
-    try {
-      const config: Record<string, string> = {};
-      if (newSubType === 'list') config.list_uri = newListUri;
-      if (newExcludeListUri.trim().startsWith('at://')) config.exclude_list_uri = newExcludeListUri;
-
-      const body = newSubType === 'list'
-        ? { target_handle: newListUri, mode: newMode, sub_type: 'list', include_followers: false, config }
-        : { target_handle: newTarget, mode: newMode, include_followers: newIncludeFollowers, sub_type: newSubType, config };
-
-      const res = await fetch('/api/subscriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) { setLoggedIn(false); return; }
-      if (res.ok) {
-        setNewTarget('');
-        setNewListUri('');
-        setNewExcludeListUri('');
-        setShowNewExclude(false);
-        await loadSubscriptions();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? t.errorGeneral);
-      }
-    } catch {
-      setError(t.errorGeneral);
-    }
-  };
-
   const handleDeleteSubscription = async (id: string) => {
     try {
       const res = await fetch(`/api/subscriptions/${id}`, { method: 'DELETE' });
@@ -108,6 +65,46 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
     } catch {
       setError(t.errorGeneral);
     }
+  };
+
+  const handleToggleProtect = async (subId: string, flag: 'protect_mutuals' | 'protect_followings', currentValue: boolean) => {
+    setPatchingSubId(subId);
+    try {
+      const res = await fetch(`/api/subscriptions/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { [flag]: !currentValue } }),
+      });
+      if (res.status === 401) { setLoggedIn(false); return; }
+      if (res.ok) {
+        setSubscriptions((prev) => prev.map((s) =>
+          s.id === subId
+            ? { ...s, config: { ...(s.config as Record<string, unknown> ?? {}), [flag]: !currentValue } }
+            : s
+        ));
+      }
+    } catch { /* ignore */ }
+    finally { setPatchingSubId(null); }
+  };
+
+  const handlePatchAddToList = async (subId: string, listUri: string | null) => {
+    setPatchingSubId(subId);
+    try {
+      const res = await fetch(`/api/subscriptions/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { add_to_list_uri: listUri } }),
+      });
+      if (res.status === 401) { setLoggedIn(false); return; }
+      if (res.ok) {
+        setSubscriptions((prev) => prev.map((s) =>
+          s.id === subId
+            ? { ...s, config: { ...(s.config as Record<string, unknown> ?? {}), add_to_list_uri: listUri } }
+            : s
+        ));
+      }
+    } catch { /* ignore */ }
+    finally { setPatchingSubId(null); }
   };
 
   const card = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--bg-border)' };
@@ -175,96 +172,6 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
         </div>
       )}
 
-      {/* Add subscription */}
-      <div className="p-5 rounded-2xl flex flex-col gap-4" style={card}>
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t.addSubscription}</h3>
-
-        {/* Sub type selector */}
-        <div>
-          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.listSource}</label>
-          <select value={newSubType} onChange={(e) => setNewSubType(e.target.value as typeof newSubType)}
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium focus-ring"
-            style={input}>
-            <option value="follower">{t.listSourceFollowers}</option>
-            <option value="list">{t.listSourceList}</option>
-            <option value="reblock">Reblock</option>
-            <option value="postinteraction">Post Interaction</option>
-          </select>
-        </div>
-
-        {/* Target: handle (non-list types) */}
-        {newSubType !== 'list' && (
-          <div className="flex gap-2">
-            <input
-              type="text" value={newTarget} onChange={(e) => setNewTarget(e.target.value)}
-              placeholder={t.targetHandlePlaceholder}
-              className="flex-1 px-3.5 py-2.5 rounded-xl text-sm font-mono focus-ring transition-all"
-              style={input}
-            />
-            <select value={newMode} onChange={(e) => setNewMode(e.target.value as Mode)}
-              className="px-3.5 py-2.5 rounded-xl text-sm font-medium focus-ring"
-              style={input}>
-              <option value="block">{t.blockTool}</option>
-              <option value="mute">{t.muteTool}</option>
-            </select>
-          </div>
-        )}
-
-        {/* Include followers (follower type only) */}
-        {newSubType === 'follower' && (
-          <label className="flex items-center gap-3 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
-            <div className="w-4 h-4 rounded border-2 flex items-center justify-center transition-all"
-              style={{ borderColor: newIncludeFollowers ? 'var(--accent)' : 'var(--bg-border)', backgroundColor: newIncludeFollowers ? 'var(--accent)' : 'transparent' }}
-              onClick={() => setNewIncludeFollowers(!newIncludeFollowers)}>
-              {newIncludeFollowers && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-            </div>
-            <input type="checkbox" checked={newIncludeFollowers} onChange={(e) => setNewIncludeFollowers(e.target.checked)} className="sr-only" />
-            {t.includeFollowers}
-          </label>
-        )}
-
-        {/* Target: list picker (list type) */}
-        {newSubType === 'list' && (
-          <>
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.listPickerTitle}</label>
-              <ListPicker t={t} selectedUri={newListUri} onSelect={setNewListUri} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t.blockTool} / {t.muteTool}</label>
-              <select value={newMode} onChange={(e) => setNewMode(e.target.value as Mode)}
-                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium focus-ring"
-                style={input}>
-                <option value="block">{t.blockTool}</option>
-                <option value="mute">{t.muteTool}</option>
-              </select>
-            </div>
-          </>
-        )}
-
-        {/* Exclusion list (all types) */}
-        <div>
-          <button type="button" onClick={() => setShowNewExclude((v) => !v)}
-            className="flex items-center gap-2 text-xs font-medium transition-colors"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: showNewExclude ? 'var(--accent)' : 'var(--text-secondary)', padding: 0 }}>
-            {showNewExclude ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            {t.listExcludeToggle}
-          </button>
-          {showNewExclude && (
-            <div className="mt-3 flex flex-col gap-2">
-              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t.listExcludeHint}</p>
-              <ListPicker t={t} selectedUri={newExcludeListUri} onSelect={setNewExcludeListUri} />
-            </div>
-          )}
-        </div>
-
-        <button onClick={handleAddSubscription}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
-          style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>
-          <Plus size={15} /> {t.subscribeBtn}
-        </button>
-      </div>
-
       {/* Subscription list */}
       <div className="flex flex-col gap-2">
       {subscriptions.length === 0 ? (
@@ -285,14 +192,7 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
             <div className="p-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-sm font-medium font-mono truncate flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
-                  {sub.sub_type === 'list'
-                    ? <><List size={13} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-                        <span className="truncate text-xs" title={String(sub.config?.list_uri ?? sub.target_handle)}>
-                          {String(sub.config?.list_uri ?? sub.target_handle).replace(/^at:\/\//, '').slice(0, 40)}…
-                        </span>
-                      </>
-                    : `@${sub.target_handle}`
-                  }
+                  @{sub.target_handle}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                   {subTypeBadge(sub.sub_type ?? 'follower')}
@@ -300,11 +200,9 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                     style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
                     {sub.mode}
                   </span>
-                  {sub.sub_type !== 'list' && (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {sub.include_followers ? t.includeFollowers : t.withoutFollowers}
-                    </span>
-                  )}
+                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {sub.include_followers ? t.includeFollowers : t.withoutFollowers}
+                  </span>
                   {!!(sub.config as Record<string, unknown>)?.exclude_list_uri && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium"
                       style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
@@ -312,6 +210,48 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                     </span>
                   )}
                 </div>
+                {sub.sub_type !== 'list' && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {(() => {
+                      const cfg = sub.config as Record<string, unknown> | null;
+                      const hasMutuals = !!cfg?.protect_mutuals;
+                      const hasFollowings = !!cfg?.protect_followings;
+                      const isPatching = patchingSubId === sub.id;
+                      return <>
+                        <button
+                          onClick={() => handleToggleProtect(sub.id, 'protect_mutuals', hasMutuals)}
+                          disabled={isPatching}
+                          className="px-1.5 py-0.5 rounded text-xs transition-all disabled:opacity-50 cursor-pointer"
+                          style={hasMutuals
+                            ? { backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
+                            : { backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: '1px solid var(--bg-border)' }}>
+                          {t.subProtectMutuals} {hasMutuals ? '✓' : '–'}
+                        </button>
+                        <button
+                          onClick={() => handleToggleProtect(sub.id, 'protect_followings', hasFollowings)}
+                          disabled={isPatching}
+                          className="px-1.5 py-0.5 rounded text-xs transition-all disabled:opacity-50 cursor-pointer"
+                          style={hasFollowings
+                            ? { backgroundColor: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }
+                            : { backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: '1px solid var(--bg-border)' }}>
+                          {t.subProtectFollowings} {hasFollowings ? '✓' : '–'}
+                        </button>
+                      </>;
+                    })()}
+                  </div>
+                )}
+                {!!(sub.config as Record<string, unknown>)?.add_to_list_uri && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => handlePatchAddToList(sub.id, null)}
+                      disabled={patchingSubId === sub.id}
+                      className="px-1.5 py-0.5 rounded text-xs flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                      style={{ backgroundColor: 'rgba(99,102,241,0.12)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.3)' }}>
+                      <List size={10} />
+                      {String(sub.config?.add_to_list_uri ?? '').replace(/^at:\/\/.*\/app\.bsky\.graph\.list\//, '').slice(0, 20)}
+                    </button>
+                  </div>
+                )}
                 <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
                   {t.lastUpdated}: {sub.last_updated
                     ? new Date(sub.last_updated).toLocaleString(undefined, {
