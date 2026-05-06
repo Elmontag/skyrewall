@@ -30,6 +30,20 @@ export async function GET(req: NextRequest) {
       throw new Error(`OAuth returned invalid DID: ${did}`);
     }
 
+    // Re-auth DID binding: if the reconnect button was used, verify that the account
+    // completing OAuth is the same one that initiated the flow. If a different account
+    // is returned, reject immediately to prevent account substitution.
+    const expectedDid = req.cookies.get('oauth_reauth_did')?.value ?? null;
+    if (expectedDid !== null && did !== expectedDid) {
+      await deleteOAuthSession(did);
+      console.warn('[oauth/callback] reauth DID mismatch — rejecting');
+      const errorUrl = `${appUrl}/?tab=account&oauth_error=wrong_account`;
+      const mismatchRes = NextResponse.redirect(errorUrl);
+      mismatchRes.cookies.delete('oauth_reauth_did');
+      mismatchRes.cookies.delete('oauth_reg_consent');
+      return mismatchRes;
+    }
+
     // Resolve DID → handle via the public Bluesky AppView first (fast, cached).
     // We deliberately avoid client.restore() here: the freshly-stored OAuth
     // session is occasionally not yet readable in the same request, causing
@@ -170,6 +184,7 @@ export async function GET(req: NextRequest) {
       maxAge: SESSION_MAX_AGE_SECONDS,
     });
     response.cookies.delete('oauth_reg_consent');
+    response.cookies.delete('oauth_reauth_did');
     return response;
   } catch (err) {
     const sanitized = sanitizeError(err);

@@ -80,11 +80,16 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       .catch(() => setAuthStep('identity'))
       .finally(() => setLoading(false));
 
-    // Detect OAuth callback errors redirected back with ?oauth_error=1
+    // Detect OAuth callback errors redirected back with ?oauth_error=…
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('oauth_error') === '1') {
-        setAuthError(t.oauthErrorDesc);
+      const oauthErr = params.get('oauth_error');
+      if (oauthErr) {
+        if (oauthErr === 'wrong_account') {
+          setAuthError(t.oauthErrorWrongAccount);
+        } else if (oauthErr !== 'consent') {
+          setAuthError(t.oauthErrorDesc);
+        }
         const url = new URL(window.location.href);
         url.searchParams.delete('oauth_error');
         window.history.replaceState({}, '', url.toString());
@@ -168,10 +173,15 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
     setOauthLoading(true);
     setAuthError('');
     try {
+      // If the user is already logged in (re-auth / reconnect flow), bind the OAuth
+      // request to the current user's DID so a different account cannot be substituted.
+      const isReauth = authStep === 'dashboard';
       const res = await fetch('/api/auth/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: currentHandle || loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
+        body: isReauth
+          ? JSON.stringify({ isReauth: true })
+          : JSON.stringify({ handle: currentHandle || loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
       });
       if (res.ok) {
         const { redirectUrl } = await res.json();

@@ -143,6 +143,7 @@ const de: Translations = {
   oauthConnecting: 'Weiterleitung…',
   oauthErrorTitle: 'Anmeldung fehlgeschlagen',
   oauthErrorDesc: 'Die OAuth-Anmeldung konnte nicht abgeschlossen werden. Bitte erneut versuchen.',
+  oauthErrorWrongAccount: 'Dieser Bluesky-Account stimmt nicht mit deiner aktuellen Sitzung überein. Bitte melde dich mit dem richtigen Account an.',
   oauthAccountLinked: 'Dein bestehendes Konto wurde über Bluesky OAuth verknüpft.',
   oauthSessionExpiredTitle: 'Bluesky-Verbindung unterbrochen',
   oauthSessionExpiredDesc: 'Deine Bluesky-Autorisierung ist abgelaufen oder wurde widerrufen. Abonnements sind pausiert, bis du dich neu autorisierst.',

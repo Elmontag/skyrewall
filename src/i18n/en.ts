@@ -141,6 +141,7 @@ const en = {
   oauthConnecting: 'Redirecting…',
   oauthErrorTitle: 'Sign-in failed',
   oauthErrorDesc: 'The OAuth sign-in could not be completed. Please try again.',
+  oauthErrorWrongAccount: 'This Bluesky account does not match your current session. Please sign in with the correct account.',
   oauthAccountLinked: 'Your existing account was linked via Bluesky OAuth.',
   oauthSessionExpiredTitle: 'Bluesky connection lost',
   oauthSessionExpiredDesc: 'Your Bluesky authorization has expired or was revoked. Subscriptions are paused until you re-authorize.',

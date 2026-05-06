@@ -52,7 +52,7 @@ export default function Home() {
       const res = await fetch('/api/auth/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ privacyAccepted: true }),
+        body: JSON.stringify({ isReauth: true }),
       });
       if (res.ok) {
         const { redirectUrl } = await res.json();

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOAuthClient } from '@/lib/oauth-client';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { getSessionUserId } from '@/lib/session';
+import { query } from '@/lib/db';
+
+interface UserRow { handle: string; did: string | null; }
 
 export async function POST(req: NextRequest) {
   const originRejection = rejectCrossOrigin(req);
@@ -18,13 +22,31 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    // Optional handle: used for PAR (Pushed Authorization Requests) to pre-select the user's PDS
     const handle: string | undefined = body.handle?.trim() || undefined;
-    // privacyAccepted: required for new-account OAuth registrations; stored in a short-lived
-    // cookie so the callback can enforce consent before creating an account.
     const privacyAccepted: boolean = body.privacyAccepted === true;
-    if (handle) {
-      const handleRl = checkRateLimit(`oauth-start:handle:${handle.toLowerCase()}`, 5, 15 * 60 * 1000);
+    // isReauth: set by the reconnect button to bind the OAuth flow to the current user's DID.
+    // Prevents a different account from being accepted in the callback.
+    const isReauth: boolean = body.isReauth === true;
+
+    // When re-authenticating an existing session, look up the user's DID so we can
+    // (a) pre-select their Bluesky account via PAR handle hint, and
+    // (b) store the expected DID in a short-lived cookie for the callback to verify.
+    let reauthDid: string | null = null;
+    let reauthHandle: string | undefined = handle;
+    if (isReauth) {
+      const userId = await getSessionUserId();
+      if (!userId) {
+        return NextResponse.json({ error: 'Must be logged in to re-authorize.' }, { status: 401 });
+      }
+      const rows = await query<UserRow>('SELECT handle, did FROM users WHERE id = $1', [userId]);
+      if (rows[0]) {
+        reauthDid = rows[0].did;
+        reauthHandle = reauthHandle ?? rows[0].handle;
+      }
+    }
+
+    if (reauthHandle) {
+      const handleRl = checkRateLimit(`oauth-start:handle:${reauthHandle.toLowerCase()}`, 5, 15 * 60 * 1000);
       if (!handleRl.allowed) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -34,21 +56,26 @@ export async function POST(req: NextRequest) {
     }
 
     const client = getOAuthClient();
-    const url = await client.authorize(handle || 'bsky.social', {
+    const url = await client.authorize(reauthHandle || 'bsky.social', {
       scope: 'atproto transition:generic',
     });
 
+    const cookieOpts = {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
     const response = NextResponse.json({ redirectUrl: url.toString() });
-    // Carry privacy consent through the OAuth redirect so the callback can
-    // enforce it before creating a brand-new account (re-login never creates accounts).
-    if (privacyAccepted) {
-      response.cookies.set('oauth_reg_consent', '1', {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 10 * 60, // 10 minutes — enough for the OAuth round-trip
-        path: '/',
-      });
+
+    if (privacyAccepted && !isReauth) {
+      // Only set consent cookie for new registrations, not re-auth flows.
+      // Re-auth never creates accounts — no consent needed.
+      response.cookies.set('oauth_reg_consent', '1', { ...cookieOpts, maxAge: 10 * 60 });
+    }
+    if (isReauth && reauthDid) {
+      // Bind expected DID so callback can reject a different account.
+      response.cookies.set('oauth_reauth_did', reauthDid, { ...cookieOpts, maxAge: 10 * 60 });
     }
     return response;
   } catch (err) {
