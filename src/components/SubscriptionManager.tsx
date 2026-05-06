@@ -222,6 +222,26 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                     {sub.include_followers ? t.includeFollowers : t.withoutFollowers}
                   </span>
+                  {/* followers_only badge — shown when include_followers=true */}
+                  {sub.include_followers && (() => {
+                    const cfg = sub.config as Record<string, unknown> | null;
+                    const followersOnly = cfg?.followers_only;
+                    // followersOnly===false → main account is included; undefined/true → followers only
+                    if (followersOnly === false) {
+                      return (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                          {t.includeMainAccount}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={{ backgroundColor: 'rgba(99,102,241,0.1)', color: '#6366f1' }}>
+                        {t.followersOnlyBadge}
+                      </span>
+                    );
+                  })()}
                   {!!(sub.config as Record<string, unknown>)?.exclude_list_uri && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium"
                       style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981' }}

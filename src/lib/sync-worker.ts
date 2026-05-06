@@ -199,6 +199,8 @@ async function syncAllSubscriptions(): Promise<void> {
 
         let dids: string[];
 
+        const subscriptionConfig = (row.config as Record<string, unknown>) ?? {};
+
         if (row.sub_type === 'reblock') {
           dids = await fetchBlockedByFromClearSky(row.handle);
         } else if (row.sub_type === 'postinteraction') {
@@ -216,12 +218,16 @@ async function syncAllSubscriptions(): Promise<void> {
         } else if (row.include_followers) {
           const followers = await fetchAllFollowers(workAgent, row.target_handle);
           dids = followers.map((f) => f.did);
+          // When followers_only is explicitly false, also action the target account itself
+          if (subscriptionConfig.followers_only === false) {
+            const profile = await workAgent.getProfile({ actor: row.target_handle });
+            const targetProfileDid: string = profile.data.did;
+            if (!dids.includes(targetProfileDid)) dids.unshift(targetProfileDid);
+          }
         } else {
           const profile = await workAgent.getProfile({ actor: row.target_handle });
           dids = [profile.data.did];
         }
-
-        const subscriptionConfig = (row.config as Record<string, unknown>) ?? {};
 
         // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
         const excludeListUri = subscriptionConfig.exclude_list_uri;

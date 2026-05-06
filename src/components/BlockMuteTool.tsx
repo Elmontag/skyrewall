@@ -29,6 +29,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [prefilled, setPrefilled] = useState(false);
   const [targetHandle, setTargetHandle] = useState('');
   const [includeFollowers, setIncludeFollowers] = useState(true);
+  const [followersOnly, setFollowersOnly] = useState(true);
   const [followers, setFollowers] = useState<Follower[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
@@ -234,6 +235,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
         ...(excludeListUri.trim().startsWith('at://') ? { exclude_list_uri: excludeListUri } : {}),
         ...protectConfig,
         ...(addToListUri.trim().startsWith('at://') ? { add_to_list_uri: addToListUri } : {}),
+        followers_only: followersOnly,
       } };
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
@@ -302,8 +304,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setProcessError('');
     const dids: string[] = [...selected];
 
-    // Prepend target DID (cached from initial fetch) if not already included
-    if (targetDid && !dids.includes(targetDid)) dids.unshift(targetDid);
+    // Prepend target DID (cached from initial fetch) unless followers-only mode
+    if (!followersOnly && targetDid && !dids.includes(targetDid)) dids.unshift(targetDid);
 
     const credFields = prefilled ? {} : { handle, password, stateless: true };
 
@@ -364,6 +366,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
     setError(''); setResult(null);
     setFetchProgress({ count: 0, loading: false });
     setSource('followers');
+    setFollowersOnly(true);
     setListUri('');
     setExcludeListUri('');
     setShowExclude(false);
@@ -526,6 +529,29 @@ export default function BlockMuteTool({ mode, t }: Props) {
               </label>
             ))}
           </div>
+
+          {/* Followers-only toggle (only relevant when including followers) */}
+          {includeFollowers && (
+            <label
+              className="flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all"
+              style={{
+                backgroundColor: followersOnly ? 'var(--accent-muted)' : 'var(--bg-dark)',
+                border: `1px solid ${followersOnly ? 'var(--accent)' : 'var(--bg-border)'}`,
+              }}
+              onClick={() => setFollowersOnly((v) => !v)}
+            >
+              <div
+                className="w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5"
+                style={{ borderColor: followersOnly ? 'var(--accent)' : 'var(--bg-border)', background: followersOnly ? 'var(--accent)' : 'transparent' }}
+              >
+                {followersOnly && <Check size={10} strokeWidth={3} color="#fff" />}
+              </div>
+              <div>
+                <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{t.followersOnly}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>{t.followersOnlyHint}</div>
+              </div>
+            </label>
+          )}
 
           {/* Exclusion list (collapsible, both sources) */}
           <div>
