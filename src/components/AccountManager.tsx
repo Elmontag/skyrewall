@@ -171,7 +171,7 @@ export default function AccountManager({ t, onLogin, onLogout }: Props) {
       const res = await fetch('/api/auth/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
+        body: JSON.stringify({ handle: currentHandle || loginHandle.trim() || undefined, privacyAccepted: authMode === 'register' }),
       });
       if (res.ok) {
         const { redirectUrl } = await res.json();

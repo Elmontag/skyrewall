@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const client = getOAuthClient();
     const url = await client.authorize(handle || 'bsky.social', {
-      scope: 'atproto',
+      scope: 'atproto transition:generic',
     });
 
     const response = NextResponse.json({ redirectUrl: url.toString() });
