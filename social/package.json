@@ -1,0 +1,13 @@
+{
+  "name": "skyrewall-social",
+  "version": "1.0.0",
+  "description": "SkyreWall Social Creator — BlueSky post builder",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

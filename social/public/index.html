@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyreWall — Social Creator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    /* ─── Reset & Tokens ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand:         #0085ff;
+      --brand-light:   #3399ff;
+      --brand-dark:    #0070d9;
+      --app-bg:        #0e1620;
+      --sidebar:       #0a1018;
+      --surface:       #172030;
+      --elevated:      #1e2a3d;
+      --border:        #263347;
+      --border-strong: #304560;
+      --text:          #e6ecf0;
+      --text2:         #7d92a5;
+      --text3:         #3d5166;
+      --font:          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: var(--font);
+    }
+    body {
+      background: var(--app-bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── App Header ───────────────────────────────────────────────── */
+    #appHeader {
+      height: 52px;
+      min-height: 52px;
+      background: var(--sidebar);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 0;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .hdr-logo { display: flex; align-items: center; }
+    .hdr-logo svg { height: 22px; display: block; }
+    .hdr-divider { width: 1px; height: 20px; background: var(--border-strong); margin: 0 14px; }
+    .hdr-title { font-size: 13px; font-weight: 500; color: var(--text2); }
+
+    /* ─── Layout ───────────────────────────────────────────────────── */
+    #appMain { flex: 1; display: flex; overflow: hidden; }
+
+    /* ─── Controls Sidebar ─────────────────────────────────────────── */
+    #controls {
+      width: 292px;
+      flex-shrink: 0;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 18px 14px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+    #controls::-webkit-scrollbar { width: 4px; }
+    #controls::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
+
+    .ctrl-section { display: flex; flex-direction: column; gap: 10px; }
+    .ctrl-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text3);
+    }
+
+    /* Format Tabs */
+    .fmt-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .fmt-tab {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      padding: 9px 8px 8px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text2);
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+    }
+    .fmt-tab:hover  { background: var(--elevated); color: var(--text); }
+    .fmt-tab.active { background: rgba(0,133,255,.1); border-color: rgba(0,133,255,.45); color: var(--brand); }
+    .fmt-icon { background: currentColor; border-radius: 3px; opacity: .8; }
+    .fmt-tab.active .fmt-icon { opacity: 1; }
+
+    /* Template Cards */
+    .tmpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .tmpl-card {
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      overflow: hidden;
+      aspect-ratio: 1;
+      transition: border-color 0.12s;
+    }
+    .tmpl-card:hover  { border-color: var(--border-strong); }
+    .tmpl-card.active { border-color: var(--brand); }
+    .tmpl-card-inner {
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-family: var(--font);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .tmpl-card[data-template="dark"]     .tmpl-card-inner { background: #0a1018; color: #e6ecf0; }
+    .tmpl-card[data-template="light"]    .tmpl-card-inner { background: #edf1f5; color: #0c1524; }
+    .tmpl-card[data-template="gradient"] .tmpl-card-inner { background: linear-gradient(135deg,#001828,#0d1020); color: #0085ff; }
+    .tmpl-card[data-template="feature"]  .tmpl-card-inner { background: linear-gradient(90deg,#0e2038 52%,#0a1018 52%); color: #e6ecf0; }
+
+    .mini-shield {
+      width: 16px; height: 20px;
+      background: currentColor;
+      clip-path: polygon(50% 0%,100% 18%,100% 55%,50% 100%,0% 55%,0% 18%);
+      opacity: .8;
+    }
+    .tmpl-card.active .mini-shield { opacity: 1; }
+
+    /* Input Fields */
+    .field-group { display: flex; flex-direction: column; gap: 5px; }
+    .field-label  { font-size: 11px; font-weight: 500; color: var(--text2); }
+    .field-input, .field-textarea {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 8px 10px;
+      width: 100%;
+      line-height: 1.5;
+      transition: border-color .15s;
+    }
+    .field-textarea { resize: vertical; min-height: 54px; }
+    .field-input:focus,
+    .field-textarea:focus     { outline: none; border-color: var(--brand); }
+    .field-input::placeholder,
+    .field-textarea::placeholder { color: var(--text3); }
+
+    /* Drop Zone */
+    #dropZone {
+      border: 1.5px dashed var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 90px;
+      transition: border-color .15s, background .15s;
+    }
+    #dropZone:hover, #dropZone.drag-over {
+      border-color: var(--brand);
+      background: rgba(0,133,255,.05);
+    }
+    .drop-text   { text-align: center; pointer-events: none; }
+    .drop-icon   { font-size: 22px; margin-bottom: 6px; }
+    .drop-hint   { font-size: 12px; color: var(--text2); }
+    .drop-sub    { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    #dropZonePreview { display: none; }
+    .drop-prev-wrap  { position: relative; display: inline-block; }
+    .drop-prev-wrap img { max-width: 200px; max-height: 80px; border-radius: 6px; object-fit: cover; display: block; }
+    .remove-img-btn {
+      position: absolute; top: -7px; right: -7px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #fff; border: none; cursor: pointer;
+      font-size: 15px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font);
+    }
+
+    /* Toggle */
+    .toggle-row   { display: flex; align-items: center; justify-content: space-between; padding: 2px 0; }
+    .toggle-label { font-size: 12px; color: var(--text2); }
+    .toggle-wrap  { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .toggle-wrap input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0;
+      background: var(--elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px; cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute;
+      top: 2px; left: 2px;
+      width: 14px; height: 14px;
+      border-radius: 50%; background: var(--text3);
+      transition: left .2s, background .2s;
+    }
+    .toggle-wrap input:checked ~ .toggle-track              { background: var(--brand); border-color: var(--brand); }
+    .toggle-wrap input:checked ~ .toggle-track::after { left: 18px; background: #fff; }
+
+    /* ─── Preview Section ──────────────────────────────────────────── */
+    #previewSection {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #070d14;
+      padding: 24px 24px 20px;
+      overflow: hidden;
+      gap: 16px;
+    }
+    #previewOuter {
+      flex: 1; width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #previewScaler { transform-origin: top left; flex-shrink: 0; }
+    #previewMeta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+    #fmtLabel    { font-size: 12px; color: var(--text3); }
+    #downloadBtn {
+      background: var(--brand); color: #fff;
+      border: none; border-radius: 9px;
+      padding: 10px 20px;
+      font-family: var(--font); font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 7px;
+      transition: background .15s, opacity .15s;
+    }
+    #downloadBtn:hover    { background: var(--brand-light); }
+    #downloadBtn:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ─── Post Canvas: Base ─────────────────────────────────────────── */
+    .post-canvas {
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .pc-bg      { position: absolute; inset: 0; z-index: 0; }
+    .pc-top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: none; }
+    .pc-deco    {
+      position: absolute; z-index: 0;
+      pointer-events: none;
+      fill: #0085ff;
+      display: none;
+    }
+
+    /* Left image panel — feature template only */
+    .pc-img-left-wrap {
+      display: none;
+      position: absolute; top: 0; left: 0; bottom: 0;
+      z-index: 1; overflow: hidden;
+    }
+    .pc-img-left { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    /* Accent bar — feature template only */
+    .pc-accent-bar { display: none; position: absolute; z-index: 3; }
+
+    /* Main inner content */
+    .pc-inner {
+      position: relative; z-index: 2;
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      padding: 6%;
+    }
+    .pc-header { flex-shrink: 0; }
+    .pc-body   {
+      flex: 1;
+      display: flex; flex-direction: column;
+      justify-content: center;
+      gap: 4%; padding: 3% 0;
+    }
+    .pc-footer {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* Logo */
+    #pcLogoWrap { display: inline-flex; }
+    .pc-logo    { height: 4em; width: auto; display: block; }
+    .pc-logo-text { fill: #e6ecf0; }
+
+    /* Center image */
+    .pc-img-center-wrap { display: flex; justify-content: center; }
+    .pc-img-center {
+      max-width: 85%; max-height: 40%;
+      object-fit: contain; border-radius: 2.2%; display: block;
+    }
+    .no-image .pc-img-center-wrap { display: none; }
+
+    /* Text block */
+    .pc-text { display: flex; flex-direction: column; gap: 1.8%; }
+    .pc-headline { font-size: 5em; font-weight: 800; line-height: 1.06; letter-spacing: -.025em; }
+    .pc-subtext  { font-size: 2.3em; font-weight: 400; line-height: 1.45; max-width: 88%; }
+    .pc-hashtags { font-size: 1.8em; font-weight: 500; }
+    .pc-url      { font-size: 1.8em; font-weight: 400; }
+
+
+    /* ─── Template: Dark ───────────────────────────────────────────── */
+    .tmpl-dark { background: #0a1018; }
+
+    .tmpl-dark .pc-bg {
+      background:
+        radial-gradient(ellipse 100% 80% at 95% 5%,  rgba(0,133,255,.20) 0%, transparent 52%),
+        radial-gradient(ellipse  50% 45% at  5% 95%, rgba(0,80,180,.12) 0%, transparent 50%);
+    }
+    .tmpl-dark .pc-deco { display: block; bottom: -4%; right: -3%; width: 38%; height: auto; opacity: .06; }
+    .tmpl-dark .pc-logo-text { fill: #e6ecf0; }
+    .tmpl-dark .pc-headline  { color: #e6ecf0; }
+    .tmpl-dark .pc-subtext   { color: rgba(230,236,240,.52); }
+    .tmpl-dark .pc-hashtags  { color: #0085ff; }
+    .tmpl-dark .pc-url       { color: rgba(230,236,240,.28); }
+    .tmpl-dark .pc-img-center {
+      box-shadow:
+        0 32px 80px rgba(0,0,0,.85),
+        0  8px 24px rgba(0,0,0,.50),
+        0  0   0   1px rgba(255,255,255,.06);
+    }
+
+
+    /* ─── Template: Light ──────────────────────────────────────────── */
+    .tmpl-light { background: #edf1f5; }
+
+    .tmpl-light .pc-top-bar {
+      display: block; height: .65%;
+      background: linear-gradient(90deg, #3399ff, #0085ff 55%, #0070d9);
+    }
+    .tmpl-light .pc-logo-text { fill: #0c1524; }
+    .tmpl-light .pc-headline  { color: #0c1524; }
+    .tmpl-light .pc-subtext   { color: #5a7a96; }
+    .tmpl-light .pc-hashtags  { color: #0085ff; }
+    .tmpl-light .pc-url       { color: #8a9db0; }
+    .tmpl-light .pc-footer {
+      border-top: 1px solid rgba(0,0,0,.10);
+      padding-top: 2.5%;
+    }
+    .tmpl-light .pc-img-center {
+      box-shadow: 0 16px 48px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.06);
+      border: 1px solid rgba(0,0,0,.06);
+    }
+
+
+    /* ─── Template: Gradient ───────────────────────────────────────── */
+    .tmpl-gradient { background: linear-gradient(150deg, #001828 0%, #050c18 50%, #020408 100%); }
+
+    .tmpl-gradient .pc-bg {
+      background: radial-gradient(ellipse 80% 65% at 50% 35%, rgba(0,133,255,.18) 0%, transparent 65%);
+    }
+    .tmpl-gradient .pc-deco {
+      display: block;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 75%; height: auto;
+      opacity: .05;
+    }
+    .tmpl-gradient .pc-inner  { align-items: center; text-align: center; }
+    .tmpl-gradient .pc-body   { align-items: center; }
+    .tmpl-gradient .pc-text   { align-items: center; }
+    .tmpl-gradient .pc-footer { justify-content: center; gap: 4em; }
+    .tmpl-gradient .pc-logo-text { fill: #0085ff; }
+    .tmpl-gradient .pc-headline {
+      font-size: 5.5em; font-weight: 900;
+      color: #0085ff;
+      background: linear-gradient(135deg, #66b3ff 0%, #0085ff 45%, #3399ff 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .tmpl-gradient .pc-subtext  { color: rgba(230,236,240,.60); max-width: 78%; }
+    .tmpl-gradient .pc-hashtags { color: rgba(0,133,255,.80); }
+    .tmpl-gradient .pc-url      { color: rgba(230,236,240,.25); }
+    .tmpl-gradient .pc-img-center {
+      max-height: 36%;
+      box-shadow:
+        0  0  70px rgba(0,133,255,.28),
+        0 32px 80px rgba(0,0,0,.95),
+        0  0   0   1px rgba(0,133,255,.18);
+    }
+
+
+    /* ─── Template: Feature ────────────────────────────────────────── */
+    .tmpl-feature { background: #0a1018; }
+
+    .tmpl-feature.no-image .pc-bg {
+      background: radial-gradient(ellipse 100% 80% at 90% 5%, rgba(0,133,255,.18) 0%, transparent 50%);
+    }
+    .tmpl-feature.no-image .pc-deco {
+      display: block; bottom: -4%; right: -3%;
+      width: 38%; height: auto; opacity: .06;
+    }
+
+    .tmpl-feature.has-image .pc-img-left-wrap {
+      display: block; width: 55%; overflow: hidden;
+    }
+    .tmpl-feature.has-image .pc-accent-bar {
+      display: block;
+      top: 0; bottom: 0;
+      left: calc(55% - 1.5px); width: 3px;
+      background: linear-gradient(180deg, #3399ff, #0085ff 50%, #0070d9);
+    }
+    .tmpl-feature.has-image .pc-inner { padding-left: 57%; }
+    .tmpl-feature .pc-img-center-wrap { display: none; }
+
+    .tmpl-feature .pc-logo-text { fill: #e6ecf0; }
+    .tmpl-feature .pc-headline  { color: #e6ecf0; font-size: 4.6em; }
+    .tmpl-feature .pc-subtext   { color: rgba(230,236,240,.52); }
+    .tmpl-feature .pc-hashtags  { color: #0085ff; }
+    .tmpl-feature .pc-url       { color: rgba(230,236,240,.28); }
+    .tmpl-feature .pc-footer { border-top: 1px solid rgba(255,255,255,.08); padding-top: 2.5%; }
+
+
+    /* ─── Format: Story (1080 × 1920) ─────────────────────────────── */
+    .fmt-story .pc-inner    { padding: 7%; }
+    .fmt-story .pc-body     { gap: 5%; }
+    .fmt-story .pc-headline { font-size: 6em; }
+    .fmt-story .pc-subtext  { font-size: 2.6em; max-width: 90%; }
+    .fmt-story .pc-hashtags,
+    .fmt-story .pc-url      { font-size: 2.1em; }
+    .fmt-story .pc-img-center { max-height: 48%; }
+
+    .fmt-story.tmpl-feature.has-image .pc-img-left-wrap {
+      top: 0; left: 0; right: 0; bottom: auto;
+      width: 100%; height: 50%;
+    }
+    .fmt-story.tmpl-feature.has-image .pc-accent-bar {
+      top: calc(50% - 1.5px); left: 0; right: 0;
+      width: 100%; height: 3px;
+      background: linear-gradient(90deg, #3399ff, #0085ff 50%, #0070d9);
+    }
+    .fmt-story.tmpl-feature.has-image .pc-inner {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 50%; width: 100%;
+      padding: 6%;
+    }
+
+
+    /* ─── Format: Landscape & Banner ───────────────────────────────── */
+    .fmt-landscape .pc-inner,
+    .fmt-banner    .pc-inner    { padding: 5% 6%; }
+    .fmt-landscape .pc-headline,
+    .fmt-banner    .pc-headline { font-size: 4.3em; }
+    .fmt-landscape .pc-subtext,
+    .fmt-banner    .pc-subtext  { font-size: 2.2em; }
+    .fmt-landscape .pc-body,
+    .fmt-banner    .pc-body     { gap: 3%; }
+
+    .fmt-landscape.has-image:not(.tmpl-feature):not(.tmpl-gradient) .pc-body,
+    .fmt-banner.has-image:not(.tmpl-feature):not(.tmpl-gradient)    .pc-body {
+      flex-direction: row; align-items: center;
+    }
+    .fmt-landscape.has-image:not(.tmpl-feature):not(.tmpl-gradient) .pc-img-center-wrap,
+    .fmt-banner.has-image:not(.tmpl-feature):not(.tmpl-gradient)    .pc-img-center-wrap {
+      flex-shrink: 0; flex: 1; justify-content: flex-start;
+    }
+    .fmt-landscape.has-image:not(.tmpl-feature):not(.tmpl-gradient) .pc-img-center,
+    .fmt-banner.has-image:not(.tmpl-feature):not(.tmpl-gradient)    .pc-img-center {
+      max-width: 100%; max-height: 200px;
+    }
+    .fmt-landscape.has-image:not(.tmpl-feature):not(.tmpl-gradient) .pc-text,
+    .fmt-banner.has-image:not(.tmpl-feature):not(.tmpl-gradient)    .pc-text { flex: 1; }
+
+    .fmt-landscape.tmpl-feature.has-image .pc-img-left-wrap { width: 52%; }
+    .fmt-landscape.tmpl-feature.has-image .pc-accent-bar    { left: calc(52% - 1.5px); }
+    .fmt-landscape.tmpl-feature.has-image .pc-inner         { padding-left: 54%; }
+
+    /* ─── Bluesky Trigger Button ───────────────────────────────────── */
+    #bskyOpenBtn {
+      background: #0085ff; color: #fff;
+      border: none; border-radius: 9px;
+      padding: 10px 20px;
+      font-family: var(--font); font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 7px;
+      transition: background .15s, opacity .15s;
+    }
+    #bskyOpenBtn:hover { background: #3399ff; }
+
+    /* ─── Overlay / Backdrop ───────────────────────────────────────── */
+    #bskyOverlay {
+      position: fixed; inset: 0; z-index: 9000;
+      background: rgba(0,0,0,.72);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s ease;
+    }
+    #bskyOverlay.open {
+      opacity: 1; pointer-events: all;
+    }
+
+    /* ─── Modal Card ───────────────────────────────────────────────── */
+    #bskyModal {
+      background: #172030;
+      border: 1px solid #263347;
+      border-radius: 18px;
+      width: 480px; max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04) inset;
+      transform: translateY(12px) scale(.97);
+      transition: transform .22s cubic-bezier(.34,1.4,.64,1);
+      scrollbar-width: thin;
+      scrollbar-color: #263347 transparent;
+    }
+    #bskyOverlay.open #bskyModal {
+      transform: translateY(0) scale(1);
+    }
+
+    .bsky-modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 20px 0;
+    }
+    .bsky-modal-title {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 15px; font-weight: 700; color: var(--text);
+    }
+    .bsky-modal-title svg { flex-shrink: 0; }
+    .bsky-close-btn {
+      width: 28px; height: 28px;
+      background: #1e2a3d; border: none; border-radius: 50%;
+      color: var(--text2); font-size: 16px; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .12s, color .12s;
+    }
+    .bsky-close-btn:hover { background: #263347; color: var(--text); }
+
+    .bsky-modal-body {
+      padding: 16px 20px 20px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    /* ─── Credentials Block ────────────────────────────────────────── */
+    .bsky-creds {
+      background: #0a1018;
+      border: 1px solid #263347;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .bsky-creds-head {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .bsky-creds-title {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: .07em; text-transform: uppercase;
+      color: #0085ff;
+    }
+    .bsky-save-btn {
+      font-size: 11px; font-weight: 500;
+      background: rgba(0,133,255,.12); color: #0085ff;
+      border: 1px solid rgba(0,133,255,.25);
+      border-radius: 7px; padding: 4px 10px;
+      cursor: pointer; font-family: var(--font);
+      transition: background .12s;
+    }
+    .bsky-save-btn:hover    { background: rgba(0,133,255,.22); }
+    .bsky-save-btn.saved    { color: #23a55a; border-color: rgba(35,165,90,.3); background: rgba(35,165,90,.08); }
+    .bsky-save-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .bsky-field { display: flex; flex-direction: column; gap: 4px; }
+    .bsky-label {
+      font-size: 11px; font-weight: 500; color: var(--text2);
+    }
+    .bsky-label-row {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .bsky-input, .bsky-textarea {
+      background: #0a1018;
+      border: 1px solid #263347;
+      border-radius: 9px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-family: var(--font); font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+      width: 100%;
+    }
+    .bsky-input:focus, .bsky-textarea:focus { border-color: #0085ff; }
+    .bsky-input::placeholder, .bsky-textarea::placeholder { color: var(--text3); }
+    .bsky-textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+
+    /* ─── Post Text + Char counter ─────────────────────────────────── */
+    .bsky-char-wrap   { position: relative; }
+    .bsky-char-count  {
+      position: absolute; bottom: 9px; right: 10px;
+      font-size: 11px; color: var(--text3); pointer-events: none;
+    }
+    .bsky-char-count.warn { color: #f59e0b; }
+    .bsky-char-count.over { color: #ef4444; }
+
+    .bsky-reset-btn {
+      font-size: 11px; font-weight: 500; color: var(--text3);
+      background: none; border: none; cursor: pointer;
+      font-family: var(--font); padding: 0;
+      transition: color .12s;
+    }
+    .bsky-reset-btn:hover { color: var(--text2); }
+
+    /* ─── Toggle Row ───────────────────────────────────────────────── */
+    .bsky-toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 13px; color: var(--text2);
+    }
+
+    /* ─── Modal Footer ─────────────────────────────────────────────── */
+    .bsky-modal-foot {
+      padding: 0 20px 20px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .bsky-foot-btns {
+      display: flex; gap: 10px;
+    }
+    .bsky-cancel-btn {
+      flex: 1;
+      background: #1e2a3d; color: var(--text2);
+      border: none; border-radius: 10px;
+      padding: 12px 16px;
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background .12s, color .12s;
+    }
+    .bsky-cancel-btn:hover { background: #263347; color: var(--text); }
+
+    .bsky-post-btn {
+      flex: 2;
+      background: #0085ff; color: #fff;
+      border: none; border-radius: 10px;
+      padding: 12px 16px;
+      font-family: var(--font); font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      transition: background .15s, opacity .15s;
+    }
+    .bsky-post-btn:hover    { background: #3399ff; }
+    .bsky-post-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .bsky-status {
+      font-size: 12px; border-radius: 9px;
+      padding: 10px 12px; line-height: 1.5;
+      display: none;
+    }
+    .bsky-status.success {
+      background: rgba(35,165,90,.1); color: #23a55a;
+      border: 1px solid rgba(35,165,90,.2);
+      display: block;
+    }
+    .bsky-status.error {
+      background: rgba(240,71,71,.1); color: #f04747;
+      border: 1px solid rgba(240,71,71,.2);
+      display: block;
+    }
+    .bsky-status a { color: inherit; font-weight: 600; text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <!-- ─── App Header ─────────────────────────────────────────────────── -->
+  <header id="appHeader">
+    <div class="hdr-logo">
+      <!-- SkyreWall shield + wordmark -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80">
+        <!-- Shield icon -->
+        <path d="M30 6 L54 14 L54 38 C54 55 43 67 30 74 C17 67 6 55 6 38 L6 14 Z"
+              fill="#0085ff" opacity=".9"/>
+        <path d="M30 18 L44 23 L44 38 C44 49 38 57 30 63 C22 57 16 49 16 38 L16 23 Z"
+              fill="#0a1018"/>
+        <path d="M22 38 L28 44 L38 32" stroke="#0085ff" stroke-width="3"
+              fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Wordmark -->
+        <text x="66" y="42" dominant-baseline="central"
+              font-family="Inter, Segoe UI, -apple-system, sans-serif" font-size="32" fill="#e6ecf0">
+          <tspan font-weight="300">skyre</tspan><tspan font-weight="700">wall</tspan>
+        </text>
+      </svg>
+    </div>
+    <div class="hdr-divider"></div>
+    <span class="hdr-title">Social Creator</span>
+  </header>
+
+  <div id="appMain">
+
+    <!-- ─── Controls Sidebar ───────────────────────────────────────── -->
+    <aside id="controls">
+
+      <!-- Format -->
+      <div class="ctrl-section">
+        <div class="ctrl-label">Format</div>
+        <div class="fmt-tabs">
+          <button class="fmt-tab active" data-format="square">
+            <div class="fmt-icon" style="width:22px;height:22px"></div>
+            Square
+          </button>
+          <button class="fmt-tab" data-format="landscape">
+            <div class="fmt-icon" style="width:28px;height:16px"></div>
+            Landscape
+          </button>
+          <button class="fmt-tab" data-format="story">
+            <div class="fmt-icon" style="width:15px;height:26px"></div>
+            Story
+          </button>
+          <button class="fmt-tab" data-format="banner">
+            <div class="fmt-icon" style="width:28px;height:15px"></div>
+            Banner
+          </button>
+        </div>
+      </div>
+
+      <!-- Template -->
+      <div class="ctrl-section">
+        <div class="ctrl-label">Template</div>
+        <div class="tmpl-grid">
+          <button class="tmpl-card active" data-template="dark">
+            <div class="tmpl-card-inner">
+              <div class="mini-shield"></div>
+              Dark
+            </div>
+          </button>
+          <button class="tmpl-card" data-template="light">
+            <div class="tmpl-card-inner">
+              <div class="mini-shield"></div>
+              Light
+            </div>
+          </button>
+          <button class="tmpl-card" data-template="gradient">
+            <div class="tmpl-card-inner">
+              <div class="mini-shield"></div>
+              Gradient
+            </div>
+          </button>
+          <button class="tmpl-card" data-template="feature">
+            <div class="tmpl-card-inner">
+              <div class="mini-shield"></div>
+              Feature
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="ctrl-section">
+        <div class="ctrl-label">Inhalt</div>
+        <div class="field-group">
+          <label class="field-label" for="inputHeadline">Überschrift</label>
+          <input  class="field-input" id="inputHeadline" type="text"
+                  placeholder="Protect your space." value="Protect your space.">
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="inputSubtext">Beschreibung</label>
+          <textarea class="field-textarea" id="inputSubtext" rows="2"
+                    placeholder="Kurze Beschreibung…">Mass block, mute, and manage BlueSky followers automatically.</textarea>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="inputHashtags">Hashtags</label>
+          <input  class="field-input" id="inputHashtags" type="text"
+                  placeholder="#SkyreWall #BlueSky" value="#SkyreWall #BlueSky #Moderation">
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="inputUrl">URL / Claim</label>
+          <input  class="field-input" id="inputUrl" type="text"
+                  placeholder="github.com/…" value="github.com/Elmontag/skyrewall">
+        </div>
+      </div>
+
+      <!-- Media -->
+      <div class="ctrl-section">
+        <div class="ctrl-label">Screenshot / Bild</div>
+        <div id="dropZone">
+          <input type="file" id="fileInput" accept="image/*" style="display:none">
+          <div id="dropZoneText" class="drop-text">
+            <div class="drop-icon">🖼</div>
+            <div class="drop-hint">Bild hierher ziehen</div>
+            <div class="drop-sub">oder klicken zum Auswählen</div>
+          </div>
+          <div id="dropZonePreview">
+            <div class="drop-prev-wrap">
+              <img id="dropPreviewImg" src="" alt="">
+              <button class="remove-img-btn" id="removeImgBtn" title="Bild entfernen">×</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="ctrl-section">
+        <div class="ctrl-label">Elemente</div>
+        <div class="toggle-row">
+          <span class="toggle-label">Logo anzeigen</span>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="toggle-showLogo" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">Hashtags</span>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="toggle-showHashtags" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">URL / Claim</span>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="toggle-showUrl" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ─── Preview Section ─────────────────────────────────────────── -->
+    <section id="previewSection">
+      <div id="previewOuter">
+        <div id="previewScaler">
+
+          <div id="postCanvas" class="post-canvas tmpl-dark fmt-square no-image">
+
+            <!-- Absolute BG layers -->
+            <div class="pc-bg"></div>
+            <div class="pc-top-bar"></div>
+            <div class="pc-accent-bar"></div>
+
+            <!-- Decorative large shield (dark / gradient templates) -->
+            <svg class="pc-deco" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+              <path d="M50 4 L92 18 L92 56 C92 82 73 102 50 116 C27 102 8 82 8 56 L8 18 Z"/>
+            </svg>
+
+            <!-- Left image panel (feature template) -->
+            <div class="pc-img-left-wrap">
+              <img class="pc-img-left" id="pcImgLeft" src="" alt="">
+            </div>
+
+            <!-- Main content -->
+            <div class="pc-inner">
+
+              <header class="pc-header">
+                <div id="pcLogoWrap">
+                  <svg class="pc-logo" id="pcLogo"
+                       xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80">
+                    <path d="M30 6 L54 14 L54 38 C54 55 43 67 30 74 C17 67 6 55 6 38 L6 14 Z"
+                          fill="#0085ff" opacity=".9"/>
+                    <path d="M30 18 L44 23 L44 38 C44 49 38 57 30 63 C22 57 16 49 16 38 L16 23 Z"
+                          fill="currentColor" class="pc-logo-bg"/>
+                    <path d="M22 38 L28 44 L38 32" stroke="#0085ff" stroke-width="3"
+                          fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                    <text class="pc-logo-text"
+                          x="66" y="42" dominant-baseline="central"
+                          font-family="Inter, Segoe UI, -apple-system, sans-serif" font-size="32">
+                      <tspan font-weight="300">skyre</tspan><tspan font-weight="700">wall</tspan>
+                    </text>
+                  </svg>
+                </div>
+              </header>
+
+              <div class="pc-body">
+                <div class="pc-img-center-wrap">
+                  <img class="pc-img-center" id="pcImgCenter" src="" alt="">
+                </div>
+                <div class="pc-text">
+                  <h1 class="pc-headline" id="pcHeadline">Protect your space.</h1>
+                  <p class="pc-subtext"  id="pcSubtext">Mass block, mute, and manage BlueSky followers automatically.</p>
+                </div>
+              </div>
+
+              <footer class="pc-footer">
+                <span class="pc-hashtags" id="pcHashtags">#SkyreWall #BlueSky #Moderation</span>
+                <span class="pc-url"      id="pcUrl">github.com/Elmontag/skyrewall</span>
+              </footer>
+
+            </div><!-- /pc-inner -->
+          </div><!-- /postCanvas -->
+
+        </div><!-- /previewScaler -->
+      </div><!-- /previewOuter -->
+
+      <div id="previewMeta">
+        <span id="fmtLabel">Instagram / Allgemein · 1080 × 1080</span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button id="downloadBtn">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1v8M4 6l3 3 3-3M2 12h10"
+                    stroke="white" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            PNG herunterladen
+          </button>
+          <button id="bskyOpenBtn">
+            <svg width="14" height="14" viewBox="0 0 360 320" fill="none">
+              <path d="M180 142c-16-72-68-130-130-142 0 0 10 80 55 110-30-6-52-16-72-28 0 0 12 60 80 78-20 0-38-4-54-12 0 0 18 54 90 72-20 10-44 16-70 16 0 0 30 24 100 24s100-24 100-24c-26 0-50-6-70-16 72-18 90-72 90-72-16 8-34 12-54 12 68-18 80-78 80-78-20 12-42 22-72 28 45-30 55-110 55-110C248 12 196 70 180 142z" fill="white"/>
+            </svg>
+            Auf Bluesky posten
+          </button>
+        </div>
+      </div>
+
+    </section><!-- /previewSection -->
+
+  </div><!-- /appMain -->
+
+  <!-- ─── Bluesky Overlay ──────────────────────────────────────────────── -->
+  <div id="bskyOverlay">
+    <div id="bskyModal" role="dialog" aria-modal="true" aria-labelledby="bskyModalTitle">
+
+      <div class="bsky-modal-head">
+        <div class="bsky-modal-title" id="bskyModalTitle">
+          <svg width="18" height="18" viewBox="0 0 360 320" fill="none">
+            <path d="M180 142c-16-72-68-130-130-142 0 0 10 80 55 110-30-6-52-16-72-28 0 0 12 60 80 78-20 0-38-4-54-12 0 0 18 54 90 72-20 10-44 16-70 16 0 0 30 24 100 24s100-24 100-24c-26 0-50-6-70-16 72-18 90-72 90-72-16 8-34 12-54 12 68-18 80-78 80-78-20 12-42 22-72 28 45-30 55-110 55-110C248 12 196 70 180 142z" fill="#0085ff"/>
+          </svg>
+          Auf Bluesky posten
+        </div>
+        <button class="bsky-close-btn" id="bskyCloseBtn" aria-label="Schließen">×</button>
+      </div>
+
+      <div class="bsky-modal-body">
+
+        <!-- Credentials -->
+        <div class="bsky-creds">
+          <div class="bsky-creds-head">
+            <span class="bsky-creds-title">Bluesky-Zugangsdaten</span>
+            <button class="bsky-save-btn" id="bskySaveBtn">Speichern</button>
+          </div>
+          <div class="bsky-field">
+            <label class="bsky-label" for="bskyHandle">Handle</label>
+            <input class="bsky-input" type="text" id="bskyHandle"
+                   placeholder="dein-handle.bsky.social" autocomplete="username">
+          </div>
+          <div class="bsky-field">
+            <div class="bsky-label-row">
+              <label class="bsky-label" for="bskyPassword">App-Passwort</label>
+              <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener"
+                 style="font-size:11px;color:#0085ff;text-decoration:none;">Erstellen →</a>
+            </div>
+            <input class="bsky-input" type="password" id="bskyPassword"
+                   placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="current-password">
+          </div>
+        </div>
+
+        <!-- Post text -->
+        <div class="bsky-field">
+          <div class="bsky-label-row">
+            <label class="bsky-label" for="bskyText">Post-Text</label>
+            <button class="bsky-reset-btn" id="bskyResetBtn">↺ Zurücksetzen</button>
+          </div>
+          <div class="bsky-char-wrap">
+            <textarea class="bsky-textarea" id="bskyText"
+                      placeholder="Post-Text…"></textarea>
+            <span class="bsky-char-count" id="bskyCharCount">0 / 300</span>
+          </div>
+        </div>
+
+        <!-- Alt text -->
+        <div class="bsky-field">
+          <label class="bsky-label" for="bskyAlt">Alt-Text für Bild <span style="color:var(--text3)">(optional)</span></label>
+          <input class="bsky-input" type="text" id="bskyAlt"
+                 placeholder="Kurze Bildbeschreibung für Screenreader">
+        </div>
+
+        <!-- Attach toggle -->
+        <div class="bsky-toggle-row">
+          <span>Vorschau als Bild anfügen</span>
+          <label class="toggle-wrap">
+            <input type="checkbox" id="bskyAttachImage" checked>
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+      </div><!-- /bsky-modal-body -->
+
+      <div class="bsky-modal-foot">
+        <div class="bsky-status" id="bskyStatus"></div>
+        <div class="bsky-foot-btns">
+          <button class="bsky-cancel-btn" id="bskyCancelBtn">Abbrechen</button>
+          <button class="bsky-post-btn"   id="bskyPostBtn">
+            <svg width="14" height="14" viewBox="0 0 360 320" fill="none">
+              <path d="M180 142c-16-72-68-130-130-142 0 0 10 80 55 110-30-6-52-16-72-28 0 0 12 60 80 78-20 0-38-4-54-12 0 0 18 54 90 72-20 10-44 16-70 16 0 0 30 24 100 24s100-24 100-24c-26 0-50-6-70-16 72-18 90-72 90-72-16 8-34 12-54 12 68-18 80-78 80-78-20 12-42 22-72 28 45-30 55-110 55-110C248 12 196 70 180 142z" fill="white"/>
+            </svg>
+            Jetzt posten
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /bskyModal -->
+  </div><!-- /bskyOverlay -->
+
+  <script>
+    'use strict';
+
+    const FORMATS = {
+      square:    { w: 1080, h: 1080, label: 'Instagram / Allgemein · 1080 × 1080' },
+      landscape: { w: 1200, h: 675,  label: 'Twitter / X · 1200 × 675' },
+      story:     { w: 1080, h: 1920, label: 'Instagram Story · 1080 × 1920' },
+      banner:    { w: 1200, h: 630,  label: 'Open Graph Banner · 1200 × 630' },
+    };
+
+    const state = {
+      format:       'square',
+      template:     'dark',
+      headline:     'Protect your space.',
+      subtext:      'Mass block, mute, and manage BlueSky followers automatically.',
+      hashtags:     '#SkyreWall #BlueSky #Moderation',
+      url:          'github.com/Elmontag/skyrewall',
+      imageDataUrl: null,
+      showLogo:     true,
+      showHashtags: true,
+      showUrl:      true,
+    };
+
+    const $ = id => document.getElementById(id);
+
+    /* ── Render ──────────────────────────────────────────────────────── */
+    function render() {
+      const fmt    = FORMATS[state.format];
+      const canvas = $('postCanvas');
+
+      canvas.style.width    = fmt.w + 'px';
+      canvas.style.height   = fmt.h + 'px';
+      canvas.style.fontSize = (fmt.w / 100) + 'px';
+
+      canvas.className = [
+        'post-canvas',
+        'tmpl-' + state.template,
+        'fmt-'  + state.format,
+        state.imageDataUrl ? 'has-image' : 'no-image',
+      ].join(' ');
+
+      $('pcHeadline').textContent = state.headline;
+      $('pcSubtext').textContent  = state.subtext;
+      $('pcHashtags').textContent = state.hashtags;
+      $('pcUrl').textContent      = state.url;
+
+      $('pcLogoWrap').style.display = state.showLogo     ? '' : 'none';
+      $('pcHashtags').style.display = state.showHashtags ? '' : 'none';
+      $('pcUrl').style.display      = state.showUrl      ? '' : 'none';
+
+      // Logo inner background matches template
+      const logoBg = $('postCanvas').querySelector('.pc-logo-bg');
+      if (logoBg) {
+        logoBg.style.fill = state.template === 'light' ? '#edf1f5' : '#0a1018';
+      }
+
+      const src = state.imageDataUrl || '';
+      $('pcImgCenter').src = src;
+      $('pcImgLeft').src   = src;
+
+      $('fmtLabel').textContent = fmt.label;
+      updateScale();
+      syncBskyText();
+    }
+
+    /* ── Scale preview to fit available space ────────────────────────── */
+    function updateScale() {
+      const fmt    = FORMATS[state.format];
+      const outer  = $('previewOuter');
+      const scaler = $('previewScaler');
+
+      const availW = outer.clientWidth  - 32;
+      const availH = outer.clientHeight - 32;
+      const scale  = Math.min(availW / fmt.w, availH / fmt.h, 1);
+
+      scaler.style.width     = fmt.w + 'px';
+      scaler.style.height    = fmt.h + 'px';
+      scaler.style.transform = `scale(${scale})`;
+
+      const scaledW = fmt.w * scale;
+      const scaledH = fmt.h * scale;
+      scaler.style.marginLeft = Math.max(0, (outer.clientWidth  - scaledW) / 2) + 'px';
+      scaler.style.marginTop  = Math.max(0, (outer.clientHeight - scaledH) / 2) + 'px';
+    }
+
+    /* ── PNG Export ──────────────────────────────────────────────────── */
+    async function download() {
+      await document.fonts.ready;
+
+      const canvas = $('postCanvas');
+      const fmt    = FORMATS[state.format];
+      const btn    = $('downloadBtn');
+
+      btn.textContent = 'Erstelle PNG…';
+      btn.disabled    = true;
+
+      try {
+        const cvs = await html2canvas(canvas, {
+          scale:           2,
+          useCORS:         true,
+          allowTaint:      true,
+          backgroundColor: null,
+          logging:         false,
+          width:           fmt.w,
+          height:          fmt.h,
+        });
+
+        const a = document.createElement('a');
+        a.download = `skyrewall-${state.template}-${state.format}.png`;
+        a.href     = cvs.toDataURL('image/png');
+        a.click();
+      } finally {
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v8M4 6l3 3 3-3M2 12h10"
+                  stroke="white" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg> PNG herunterladen`;
+        btn.disabled = false;
+      }
+    }
+
+    /* ── Image Upload ────────────────────────────────────────────────── */
+    function handleImageFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        state.imageDataUrl = e.target.result;
+        $('dropZoneText').style.display    = 'none';
+        $('dropPreviewImg').src            = e.target.result;
+        $('dropZonePreview').style.display = '';
+        render();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /* ── Event Wiring ────────────────────────────────────────────────── */
+    function setup() {
+      document.querySelectorAll('[data-format]').forEach(el =>
+        el.addEventListener('click', () => {
+          state.format = el.dataset.format;
+          document.querySelectorAll('[data-format]').forEach(e => e.classList.remove('active'));
+          el.classList.add('active');
+          render();
+        })
+      );
+
+      document.querySelectorAll('[data-template]').forEach(el =>
+        el.addEventListener('click', () => {
+          state.template = el.dataset.template;
+          document.querySelectorAll('[data-template]').forEach(e => e.classList.remove('active'));
+          el.classList.add('active');
+          render();
+        })
+      );
+
+      [
+        ['inputHeadline', 'headline'],
+        ['inputSubtext',  'subtext'],
+        ['inputHashtags', 'hashtags'],
+        ['inputUrl',      'url'],
+      ].forEach(([id, key]) =>
+        $(id).addEventListener('input', e => { state[key] = e.target.value; render(); })
+      );
+
+      const dz = $('dropZone');
+      $('fileInput').addEventListener('change', e => handleImageFile(e.target.files[0]));
+      dz.addEventListener('click',    ()  => $('fileInput').click());
+      dz.addEventListener('dragover', e   => { e.preventDefault(); dz.classList.add('drag-over'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault();
+        dz.classList.remove('drag-over');
+        handleImageFile(e.dataTransfer.files[0]);
+      });
+      $('removeImgBtn').addEventListener('click', e => {
+        e.stopPropagation();
+        state.imageDataUrl = null;
+        $('dropZoneText').style.display    = '';
+        $('dropZonePreview').style.display = 'none';
+        render();
+      });
+
+      [
+        ['toggle-showLogo',     'showLogo'],
+        ['toggle-showHashtags', 'showHashtags'],
+        ['toggle-showUrl',      'showUrl'],
+      ].forEach(([id, key]) =>
+        $(id).addEventListener('change', e => { state[key] = e.target.checked; render(); })
+      );
+
+      $('downloadBtn').addEventListener('click', download);
+
+      $('bskyOpenBtn').addEventListener('click', openBskyOverlay);
+      $('bskyCloseBtn').addEventListener('click', closeBskyOverlay);
+      $('bskyCancelBtn').addEventListener('click', closeBskyOverlay);
+      $('bskyOverlay').addEventListener('click', e => { if (e.target === $('bskyOverlay')) closeBskyOverlay(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBskyOverlay(); });
+
+      $('bskyText').addEventListener('input', () => {
+        $('bskyText')._userEdited = true;
+        updateBskyCharCount();
+      });
+      $('bskyResetBtn').addEventListener('click', () => {
+        $('bskyText')._userEdited = false;
+        syncBskyText(true);
+      });
+      $('bskySaveBtn').addEventListener('click', saveBskyConfig);
+      $('bskyPostBtn').addEventListener('click', publishToBluesky);
+
+      let t;
+      window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(updateScale, 60); });
+    }
+
+    /* ── Bluesky ─────────────────────────────────────────────────────── */
+
+    function openBskyOverlay() {
+      syncBskyText();
+      $('bskyOverlay').classList.add('open');
+      setTimeout(() => $('bskyText').focus(), 80);
+    }
+
+    function closeBskyOverlay() {
+      $('bskyOverlay').classList.remove('open');
+    }
+
+    function composePostText() {
+      const parts = [];
+      if (state.headline) parts.push(state.headline);
+      if (state.subtext)  parts.push(state.subtext);
+      if (state.hashtags) parts.push('\n' + state.hashtags);
+      if (state.url)      parts.push(state.url);
+      return parts.join('\n').trim();
+    }
+
+    function syncBskyText(force = false) {
+      const ta = $('bskyText');
+      if (!ta._userEdited || force) {
+        ta._userEdited = false;
+        ta.value = composePostText();
+        updateBskyCharCount();
+      }
+    }
+
+    function updateBskyCharCount() {
+      const len = $('bskyText').value.length;
+      const el  = $('bskyCharCount');
+      el.textContent = `${len} / 300`;
+      el.className = 'bsky-char-count' + (len > 300 ? ' over' : len > 260 ? ' warn' : '');
+    }
+
+    async function loadBskyConfig() {
+      try {
+        const r = await fetch('/api/bluesky/config');
+        if (!r.ok) return;
+        const { handle, password } = await r.json();
+        if (handle)   $('bskyHandle').value   = handle;
+        if (password) $('bskyPassword').value = password;
+      } catch { /* ignore — config may not exist yet */ }
+    }
+
+    async function saveBskyConfig() {
+      const btn = $('bskySaveBtn');
+      const handle   = $('bskyHandle').value.trim();
+      const password = $('bskyPassword').value.trim();
+      btn.disabled = true;
+      try {
+        await fetch('/api/bluesky/config', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ handle, password }),
+        });
+        btn.textContent = '✓ Gespeichert';
+        btn.classList.add('saved');
+        setTimeout(() => {
+          btn.textContent = 'Speichern';
+          btn.classList.remove('saved');
+          btn.disabled = false;
+        }, 2000);
+      } catch {
+        btn.disabled = false;
+      }
+    }
+
+    function resizeImageDataUrl(dataUrl, maxPx = 1200, quality = 0.85) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          const ratio = Math.min(maxPx / img.naturalWidth, maxPx / img.naturalHeight, 1);
+          const w = Math.round(img.naturalWidth  * ratio);
+          const h = Math.round(img.naturalHeight * ratio);
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL('image/jpeg', quality));
+        };
+        img.src = dataUrl;
+      });
+    }
+
+    async function capturePostAsJpeg() {
+      await document.fonts.ready;
+      const canvas = $('postCanvas');
+      const fmt    = FORMATS[state.format];
+      const cvs = await html2canvas(canvas, {
+        scale: 1, useCORS: true, allowTaint: true,
+        backgroundColor: null, logging: false,
+        width: fmt.w, height: fmt.h,
+      });
+      return resizeImageDataUrl(cvs.toDataURL('image/jpeg', 0.92), 1200, 0.88);
+    }
+
+    function bskyUriToUrl(uri, handle) {
+      const rkey = uri.split('/').pop();
+      return `https://bsky.app/profile/${handle}/post/${rkey}`;
+    }
+
+    async function publishToBluesky() {
+      const handle   = $('bskyHandle').value.trim().replace(/^@/, '');
+      const password = $('bskyPassword').value.trim();
+      const text     = $('bskyText').value;
+      const altText  = $('bskyAlt').value.trim();
+      const attach   = $('bskyAttachImage').checked;
+      const statusEl = $('bskyStatus');
+      const btn      = $('bskyPostBtn');
+
+      statusEl.className   = 'bsky-status';
+      statusEl.textContent = '';
+
+      if (!handle || !password) {
+        statusEl.className   = 'bsky-status error';
+        statusEl.textContent = 'Bitte Handle und App-Passwort eingeben.';
+        return;
+      }
+      if (text.length > 300) {
+        statusEl.className   = 'bsky-status error';
+        statusEl.textContent = `Text zu lang (${text.length}/300 Zeichen).`;
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Wird gepostet…';
+
+      try {
+        let imageB64 = null;
+        if (attach) {
+          const jpeg = await capturePostAsJpeg();
+          imageB64 = jpeg.split(',')[1];
+        }
+
+        const res = await fetch('/api/bluesky/post', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ handle, password, text, altText, imageB64 }),
+        });
+
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+
+        const url = bskyUriToUrl(json.uri, handle);
+        statusEl.className = 'bsky-status success';
+        statusEl.innerHTML = `✓ Veröffentlicht! <a href="${url}" target="_blank" rel="noopener">Post auf Bluesky ansehen →</a>`;
+      } catch (err) {
+        statusEl.className   = 'bsky-status error';
+        statusEl.textContent = `Fehler: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 360 320" fill="none">
+          <path d="M180 142c-16-72-68-130-130-142 0 0 10 80 55 110-30-6-52-16-72-28 0 0 12 60 80 78-20 0-38-4-54-12 0 0 18 54 90 72-20 10-44 16-70 16 0 0 30 24 100 24s100-24 100-24c-26 0-50-6-70-16 72-18 90-72 90-72-16 8-34 12-54 12 68-18 80-78 80-78-20 12-42 22-72 28 45-30 55-110 55-110C248 12 196 70 180 142z" fill="white"/>
+        </svg> Jetzt posten`;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => { setup(); render(); loadBskyConfig(); });
+    window.addEventListener('load', updateScale);
+  </script>
+</body>
+</html>
