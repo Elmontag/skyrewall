@@ -261,6 +261,15 @@ async function syncAllSubscriptions(): Promise<void> {
       await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
     } catch (err) {
       console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, sanitizeError(err));
+      // Scope errors mean the OAuth token was issued with insufficient scopes.
+      // Flag the user for re-authentication so the UI can show a warning.
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (row.did && errMsg.includes('Missing required scope')) {
+        await query(
+          'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+          [row.did]
+        ).catch(() => {});
+      }
     }
 
     // Small inter-subscription pause to avoid burst rate-limit when a user has many subscriptions

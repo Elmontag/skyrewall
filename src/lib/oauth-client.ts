@@ -96,7 +96,7 @@ export function getOAuthClient(): NodeOAuthClient {
       client_name: 'SkyreWall',
       client_uri: appUrl,
       redirect_uris: [redirectUri],
-      scope: 'atproto',
+      scope: 'atproto transition:generic',
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
