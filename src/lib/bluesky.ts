@@ -168,7 +168,7 @@ export async function blockAccounts(
     await Promise.allSettled(
       batch.map(async (did) => {
         try {
-          const repo = repoDid ?? agent.session?.did;
+          const repo = repoDid ?? agent.session?.did ?? (agent as unknown as { did?: string }).did;
           if (!repo) throw new Error('No active session');
           await withRetry(() =>
             agent.app.bsky.graph.block.create(

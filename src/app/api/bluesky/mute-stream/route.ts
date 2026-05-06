@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   let agentDid: string | undefined;
   if (sessionAgent) {
     agent = sessionAgent.agent;
-    agentDid = agent.session?.did;
+    agentDid = agent.session?.did ?? (agent as unknown as { did?: string }).did;
   } else if (isStateless && body.handle && body.password) {
     agent = await createAgent(body.handle, body.password);
     agentDid = agent.session?.did;
