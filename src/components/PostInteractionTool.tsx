@@ -23,6 +23,7 @@ export default function PostInteractionTool({ t }: Props) {
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');
   const [prefilled, setPrefilled] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [postUrl, setPostUrl] = useState('');
   const [types, setTypes] = useState<Set<InteractionType>>(new Set(['likes', 'reposts', 'quotes']));
   const [interactors, setInteractors] = useState<Follower[]>([]);
@@ -59,7 +60,8 @@ export default function PostInteractionTool({ t }: Props) {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthChecked(true));
   }, []);
 
   const handleLoad = async () => {
@@ -304,7 +306,14 @@ export default function PostInteractionTool({ t }: Props) {
 
   return (
     <div className="flex flex-col gap-5">
-      {error && (
+      {/* Auth check loading state — prevents flash of credentials form for logged-in users */}
+      {!authChecked && (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />
+        </div>
+      )}
+
+      {authChecked && error && (
         <div className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
           style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}>
           <AlertTriangle size={14} className="flex-shrink-0" /> {error}
@@ -312,7 +321,7 @@ export default function PostInteractionTool({ t }: Props) {
       )}
 
       {/* Credentials + URL form (non-prefilled: credentials first) */}
-      {(step === 'credentials' || step === 'ready') && (
+      {authChecked && (step === 'credentials' || step === 'ready') && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.postBlockTool}</h2>

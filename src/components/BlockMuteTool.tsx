@@ -27,6 +27,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
   const [handle, setHandle] = useState('');
   const [password, setPassword] = useState('');
   const [prefilled, setPrefilled] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [targetHandle, setTargetHandle] = useState('');
   const [includeFollowers, setIncludeFollowers] = useState(true);
   const [followersOnly, setFollowersOnly] = useState(true);
@@ -68,7 +69,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthChecked(true));
   }, []);
 
   const displayedSteps: Step[] = prefilled
@@ -397,8 +399,15 @@ export default function BlockMuteTool({ mode, t }: Props) {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Auth check loading state — prevents flash of credentials form for logged-in users */}
+      {!authChecked && (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw size={16} className="animate-spin" style={{ color: 'var(--text-secondary)' }} />
+        </div>
+      )}
+
       {/* Step indicator */}
-      {step !== 'done' && step !== 'processing' && (
+      {authChecked && step !== 'done' && step !== 'processing' && (
         <div className="flex items-center gap-0">
           {displayedStepLabels.map((label, i) => {
             const active = stepIndex === i;
@@ -427,7 +436,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
 
       {/* Error */}
-      {error && (
+      {authChecked && error && (
         <div
           className="px-4 py-3 rounded-xl text-sm flex items-center gap-2"
           style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid rgba(240,71,71,0.3)', color: 'var(--danger)' }}
@@ -436,8 +445,8 @@ export default function BlockMuteTool({ mode, t }: Props) {
         </div>
       )}
 
-      {/* Step 1: Credentials */}
-      {step === 'credentials' && (
+      {/* Step 1: Credentials — only for non-logged-in users */}
+      {authChecked && !prefilled && step === 'credentials' && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.step1Title}</h2>
@@ -480,7 +489,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
 
       {/* Step 2: Target */}
-      {step === 'target' && (
+      {authChecked && step === 'target' && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.step2Title}</h2>
           {prefilled && (
@@ -604,6 +613,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
           </div>
 
           <div className="flex gap-3">
+            {!prefilled && (
             <button
               onClick={() => setStep('credentials')}
               className="px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center"
@@ -611,6 +621,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
             >
               <ArrowLeft size={16} />
             </button>
+            )}
             <button
               onClick={handleGoToSubOptions}
               className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center"
@@ -622,7 +633,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
         </div>
       )}
 
-      {step === 'suboptions' && (
+      {authChecked && step === 'suboptions' && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.subOptionsTitle}</h2>
@@ -683,7 +694,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
 
       {/* Step 3: Followers */}
-      {step === 'followers' && (
+      {authChecked && step === 'followers' && (
         <div className="rounded-2xl p-6 flex flex-col gap-4" style={card}>
           <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t.followerListTitle}</h2>
 
@@ -753,7 +764,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
 
       {/* Processing */}
-      {step === 'processing' && (
+      {authChecked && step === 'processing' && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-8 flex flex-col gap-4 items-center" style={card}>
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
             style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)' }}>
@@ -795,7 +806,7 @@ export default function BlockMuteTool({ mode, t }: Props) {
       )}
 
       {/* Done */}
-      {step === 'done' && result && (
+      {authChecked && step === 'done' && result && (
         <div className="max-w-lg mx-auto w-full rounded-2xl p-6 flex flex-col gap-5" style={card}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center"
