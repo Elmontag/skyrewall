@@ -3,6 +3,9 @@ import { getSessionUserId } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { fetchUserLists, fetchSubscribedModLists, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api:lists');
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,17 +35,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
     }
 
+    log.info('fetch-start', { mode: sessionAgent ? 'stateful' : 'stateless', include_subscribed: body.include_subscribed === true });
     const lists = await fetchUserLists(agent);
 
-    let subscribedModLists;
+    let subscribedModLists: Awaited<ReturnType<typeof fetchSubscribedModLists>> | undefined;
     if (body.include_subscribed === true) {
       subscribedModLists = await fetchSubscribedModLists(agent);
     }
 
+    log.info('fetch-complete', { ownLists: lists.length, subscribedLists: subscribedModLists?.length ?? 0 });
     return NextResponse.json({ lists, ...(subscribedModLists !== undefined ? { subscribedModLists } : {}) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[api/bluesky/lists]', sanitizeError(err));
+    log.error('fetch-failed', { error: sanitizeError(err) });
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }

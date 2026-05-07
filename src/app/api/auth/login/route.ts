@@ -7,6 +7,9 @@ import { parseSession } from '@/lib/session';
 import { SESSION_MAX_AGE_SECONDS, sessionCookieOptions } from '@/lib/session-cookie';
 import { rejectCrossOrigin, getClientIp, sanitizeError } from '@/lib/request-security';
 import { createAgent } from '@/lib/bluesky';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('auth:login');
 
 // Per-IP limit: guards against distributed brute-force
 const IP_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }; // 10 req / 15 min
@@ -41,8 +44,11 @@ export async function GET() {
       user: {
         id: user.id,
         handle: user.handle,
-        // isOAuth mirrors sync-worker priority: OAuth is used whenever `did` is set,
-        // regardless of whether an app-password is also stored.
+        // isOAuth: true when the user has a DID/OAuth connection.
+        // This flag drives: the auth-method badge, the OAuth re-auth warning banner, and
+        // whether the sync-worker will attempt an OAuth token restore for subscriptions.
+        // NOTE: session-agent.ts (stateful UI calls) prefers app-password over OAuth for
+        // stability; sync-worker.ts prefers OAuth first for maximum scope coverage.
         isOAuth: !!user.did,
         oauthErrorSince: user.oauth_error_since ?? null,
       },
@@ -130,6 +136,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sessionData = signSession(JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) }));
+    log.info('login-success', { userId: user.id, handle: user.handle });
     const response = NextResponse.json({ success: true, user: { id: user.id, handle: user.handle } });
     response.cookies.set('session', sessionData, {
       ...sessionCookieOptions,
@@ -139,9 +146,10 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : '';
     if (message.includes('Authentication') || message.includes('Invalid')) {
+      log.warn('login-failed', { reason: 'bad-credentials' });
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
-    console.error('[login] error:', sanitizeError(err));
+    log.error('login-error', { error: sanitizeError(err) });
     return NextResponse.json({ error: 'Login failed' }, { status: 500 });
   }
 }

@@ -5,6 +5,9 @@ import { logBlockEvents } from '@/lib/block-events';
 import { sanitizeError, isValidAtUri } from '@/lib/request-security';
 import { isScopeError, isTargetUnavailableError } from '@/lib/session-utils';
 import { syncState } from '@/lib/sync-state';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('sync');
 
 interface SyncRow {
   sub_id: string;
@@ -75,7 +78,7 @@ async function syncAllSubscriptions(): Promise<void> {
 
   if (rows.length === 0) return;
 
-  console.log(`[sync] Processing ${rows.length} subscription(s)...`);
+  log.info('run-start', { subscriptions: rows.length });
 
   // Track which users have already had their cold-start import done this run
   const importedUsers = new Set<string>();
@@ -132,207 +135,266 @@ async function syncAllSubscriptions(): Promise<void> {
     return dids;
   }
 
-  for (const row of rows) {
-    try {
-      // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
-      // users and app-password accounts that were later linked via OAuth). Fall back to
-      // app-password if OAuth is unavailable.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let agent: any;
-      let agentDid: string | undefined;
-      let oauthAttempted = false;
+  async function processRow(row: SyncRow): Promise<void> {
+    // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
+    // users and app-password accounts that were later linked via OAuth). Fall back to
+    // app-password if OAuth is unavailable.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let agent: any;
+    let agentDid: string | undefined;
+    let oauthAttempted = false;
 
-      if (row.did) {
-        oauthAttempted = true;
-        try {
-          agent = await createAgentForOAuth(row.did);
-          agentDid = row.did;
-          // OAuth session restored successfully — clear any previous error marker
+    if (row.did) {
+      oauthAttempted = true;
+      try {
+        agent = await createAgentForOAuth(row.did);
+        agentDid = row.did;
+        await query(
+          'UPDATE users SET oauth_error_since = NULL WHERE did = $1 AND oauth_error_since IS NOT NULL',
+          [row.did]
+        ).catch(() => {});
+      } catch (oauthErr) {
+        oauthAttempted = false;
+        if (row.encrypted_password) {
+          log.warn('oauth-fallback', { handle: row.handle, error: sanitizeError(oauthErr) });
+          const password = decrypt(row.encrypted_password);
+          agent = await createAgent(row.handle, password);
+          agentDid = agent.session?.did;
+        } else {
+          log.error('oauth-failed', { handle: row.handle, did: row.did, error: sanitizeError(oauthErr) });
           await query(
-            'UPDATE users SET oauth_error_since = NULL WHERE did = $1 AND oauth_error_since IS NOT NULL',
+            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
             [row.did]
           ).catch(() => {});
-        } catch (oauthErr) {
-          oauthAttempted = false;
-          if (row.encrypted_password) {
-            // OAuth failed but we still have an app-password — fall back silently
-            console.warn(`[sync] OAuth failed for ${row.handle}, falling back to app-password:`, sanitizeError(oauthErr));
-            const password = decrypt(row.encrypted_password);
-            agent = await createAgent(row.handle, password);
-            agentDid = agent.session?.did;
-          } else {
-            console.error(`[sync] ✗ Could not restore OAuth session for ${row.handle} (${row.did}):`, sanitizeError(oauthErr));
-            // Mark when the session first started failing (don't overwrite if already set)
-            await query(
-              'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
-              [row.did]
-            ).catch(() => {});
-            continue;
-          }
+          return;
         }
-      } else if (row.encrypted_password) {
-        const password = decrypt(row.encrypted_password);
-        agent = await createAgent(row.handle, password);
-        agentDid = agent.session?.did;
-        if (!agentDid) {
-          console.warn(`[sync] ✗ subscription ${row.sub_id}: app-password login succeeded but session has no DID — skipping`);
-          continue;
+      }
+    } else if (row.encrypted_password) {
+      const password = decrypt(row.encrypted_password);
+      agent = await createAgent(row.handle, password);
+      agentDid = agent.session?.did;
+      if (!agentDid) {
+        log.warn('no-agent-did', { subId: row.sub_id });
+        return;
+      }
+    } else {
+      log.warn('no-credentials', { subId: row.sub_id });
+      return;
+    }
+
+    // Best-effort: extract the PDS hostname for observability (bsky.social vs custom PDS).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pds: string = (() => { try { const a = agent as any; return a?.service?.hostname ?? a?.serviceUrl?.hostname ?? 'unknown'; } catch { return 'unknown'; } })();
+    const authMethod = oauthAttempted ? 'oauth' : 'app-password';
+    log.info('agent-resolved', { subId: row.sub_id, handle: row.handle, pds, authMethod });
+
+    // Core processing logic, extracted so it can be retried with a different agent.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const runSubscription = async (workAgent: any, workAgentDid: string | undefined) => {
+      if (!importedUsers.has(row.user_id)) {
+        const alreadyImported = await hasImportedExistingBlocks(row.user_id);
+        if (!alreadyImported) {
+          log.info('cold-start-import', { handle: row.handle });
+          const { blocksImported, mutesImported } = await importExistingActions(workAgent, row.user_id);
+          log.info('cold-start-import-done', { handle: row.handle, blocksImported, mutesImported });
+        }
+        importedUsers.add(row.user_id);
+      }
+
+      let dids: string[];
+      const subscriptionConfig = (row.config as Record<string, unknown>) ?? {};
+
+      // Describe the subscription mode for log readability
+      const listUri = row.sub_type === 'list' ? (subscriptionConfig.list_uri as string | undefined) : undefined;
+      const followersOnly = subscriptionConfig.followers_only !== false; // default true
+      const excludeListUri = typeof subscriptionConfig.exclude_list_uri === 'string' ? subscriptionConfig.exclude_list_uri : undefined;
+      const addToListUri = typeof subscriptionConfig.add_to_list_uri === 'string' ? subscriptionConfig.add_to_list_uri : undefined;
+      const protectMutuals = !!subscriptionConfig.protect_mutuals;
+      const protectFollowings = !!subscriptionConfig.protect_followings;
+
+      log.info('sub-start', {
+        subId: row.sub_id,
+        handle: row.handle,
+        target: row.target_handle,
+        mode: row.mode,
+        subType: row.sub_type,
+        ...(listUri ? { listUri } : {}),
+        ...(row.include_followers ? { followersOnly, ...(excludeListUri ? { excludeList: true } : {}) } : {}),
+        ...(protectMutuals ? { protectMutuals } : {}),
+        ...(protectFollowings ? { protectFollowings } : {}),
+        ...(addToListUri ? { addToList: true } : {}),
+      });
+
+      if (row.sub_type === 'reblock') {
+        dids = await fetchBlockedByFromClearSky(row.handle);
+      } else if (row.sub_type === 'postinteraction') {
+        const config = (row.config ?? {}) as { types?: string[] };
+        const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
+        const interactors = await fetchPostInteractors(workAgent, row.target_handle, types);
+        dids = interactors.map((f) => f.did);
+      } else if (row.sub_type === 'list') {
+        const config = (row.config ?? {}) as { list_uri?: string };
+        if (!config.list_uri) {
+          log.warn('missing-list-uri', { subId: row.sub_id });
+          return;
+        }
+        dids = await getListMembersCached(config.list_uri, workAgent);
+      } else if (row.include_followers) {
+        const followers = await fetchAllFollowers(workAgent, row.target_handle);
+        dids = followers.map((f) => f.did);
+        if (!followersOnly) {
+          const profile = await workAgent.getProfile({ actor: row.target_handle });
+          const targetProfileDid: string = profile.data.did;
+          if (!dids.includes(targetProfileDid)) dids.unshift(targetProfileDid);
         }
       } else {
-        console.warn(`[sync] ✗ subscription ${row.sub_id}: user has no credentials (no password and no DID) — skipping`);
-        continue;
+        const profile = await workAgent.getProfile({ actor: row.target_handle });
+        dids = [profile.data.did];
       }
 
-      // Core processing logic, extracted so it can be retried with a different agent.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const runSubscription = async (workAgent: any, workAgentDid: string | undefined) => {
-        // Cold-start: import existing BlueSky blocks/mutes once per user
-        if (!importedUsers.has(row.user_id)) {
-          const alreadyImported = await hasImportedExistingBlocks(row.user_id);
-          if (!alreadyImported) {
-            console.log(`[sync] Cold-start import for ${row.handle}...`);
-            const { blocksImported, mutesImported } = await importExistingActions(workAgent, row.user_id);
-            console.log(`[sync] Imported ${blocksImported} blocks + ${mutesImported} mutes for ${row.handle}`);
-          }
-          importedUsers.add(row.user_id);
-        }
-
-        let dids: string[];
-
-        const subscriptionConfig = (row.config as Record<string, unknown>) ?? {};
-
-        if (row.sub_type === 'reblock') {
-          dids = await fetchBlockedByFromClearSky(row.handle);
-        } else if (row.sub_type === 'postinteraction') {
-          const config = (row.config ?? {}) as { types?: string[] };
-          const types = (config.types ?? ['likes', 'reposts', 'quotes']) as ('likes' | 'reposts' | 'quotes')[];
-          const interactors = await fetchPostInteractors(workAgent, row.target_handle, types);
-          dids = interactors.map((f) => f.did);
-        } else if (row.sub_type === 'list') {
-          const config = (row.config ?? {}) as { list_uri?: string };
-          if (!config.list_uri) {
-            console.warn(`[sync] ✗ subscription ${row.sub_id}: sub_type=list but config.list_uri is missing — skipping`);
-            return;
-          }
-          dids = await getListMembersCached(config.list_uri, workAgent);
-        } else if (row.include_followers) {
-          const followers = await fetchAllFollowers(workAgent, row.target_handle);
-          dids = followers.map((f) => f.did);
-          // When followers_only is explicitly false, also action the target account itself
-          if (subscriptionConfig.followers_only === false) {
-            const profile = await workAgent.getProfile({ actor: row.target_handle });
-            const targetProfileDid: string = profile.data.did;
-            if (!dids.includes(targetProfileDid)) dids.unshift(targetProfileDid);
-          }
-        } else {
-          const profile = await workAgent.getProfile({ actor: row.target_handle });
-          dids = [profile.data.did];
-        }
-
-        // Apply dynamic exclude list if configured (block followers of X, except members of list Y)
-        const excludeListUri = subscriptionConfig.exclude_list_uri;
-        if (typeof excludeListUri === 'string' && isValidAtUri(excludeListUri) && dids.length > 0) {
-          const excludeDids = await getListMembersCached(excludeListUri, workAgent);
-          if (excludeDids.length > 0) {
-            const excludeSet = new Set(excludeDids);
-            const before = dids.length;
-            dids = dids.filter((d) => !excludeSet.has(d));
-            const excluded = before - dids.length;
-            if (excluded > 0) {
-              console.log(`[sync] subscription ${row.sub_id}: excluded ${excluded} DID(s) via exclude_list_uri`);
-            }
-          }
-        }
-
-        if (dids.length > 0) {
-          const action = row.mode as 'block' | 'mute';
-          const source: 'subscription' | 'reblock' | 'interaction' =
-            row.sub_type === 'reblock' ? 'reblock' :
-            row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
-
-          // Filter out whitelisted DIDs (never actioned by subscriptions)
-          const whitelisted = await getWhitelistedDids(row.user_id, dids);
-          const nonWhitelisted = dids.filter((d) => !whitelisted.has(d));
-
-          // Filter out DIDs already actioned in a previous sync (0 extra API calls)
-          const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
-          let newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
-
-          // Opt-in: protect mutuals and/or followings (costs O(N/25) getProfiles calls)
-          const protectMutuals = !!subscriptionConfig.protect_mutuals;
-          const protectFollowings = !!subscriptionConfig.protect_followings;
-          if ((protectMutuals || protectFollowings) && newDids.length > 0) {
-            const protectedMutuals = protectMutuals ? new Set(await checkMutuals(workAgent, newDids)) : new Set<string>();
-            const protectedFollowings = protectFollowings ? new Set(await checkFollowings(workAgent, newDids)) : new Set<string>();
-            const beforeProtect = newDids.length;
-            newDids = newDids.filter((d) => !protectedMutuals.has(d) && !protectedFollowings.has(d));
-            const protectedCount = beforeProtect - newDids.length;
-            if (protectedCount > 0) {
-              console.log(`[sync] subscription ${row.sub_id}: protected ${protectedCount} DID(s) (mutuals/followings)`);
-            }
-          }
-
-          if (newDids.length > 0) {
-            const { succeededDids } = action === 'block'
-              ? await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid)
-              : await muteAccounts(workAgent, newDids);
-            await logBlockEvents(row.user_id, succeededDids, action, source);
-
-            if (typeof subscriptionConfig.add_to_list_uri === 'string' && subscriptionConfig.add_to_list_uri.startsWith('at://') && succeededDids.length > 0) {
-              try {
-                await addToList(workAgent, subscriptionConfig.add_to_list_uri, succeededDids, workAgentDid);
-              } catch (err) {
-                console.warn(`[sync] ✗ addToList failed for subscription ${row.sub_id}:`, err);
-              }
-            }
-          }
-
-          const skipped = alreadyActioned.size;
-          const wlSkipped = whitelisted.size;
-          console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, ${newDids.length} new, ${skipped} skipped, ${wlSkipped} whitelisted)`);
-        } else {
-          console.log(`[sync] ✓ ${row.handle} → @${row.target_handle} (${row.mode}/${row.sub_type}, 0 accounts)`);
-        }
-
-        await query('UPDATE subscriptions SET last_updated = NOW() WHERE id = $1', [row.sub_id]);
-      };
-
-      try {
-        await runSubscription(agent, agentDid);
-      } catch (workErr) {
-        const errMsg = workErr instanceof Error ? workErr.message : String(workErr);
-        // If the OAuth token is missing required scopes and app-password is available,
-        // fall back to app-password for this run and flag the user for re-auth.
-        if (isScopeError(errMsg) && oauthAttempted && row.encrypted_password) {
-          console.warn(`[sync] OAuth scope insufficient for ${row.handle} — retrying with app-password, flagging for re-auth`);
-          await query(
-            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
-            [row.did]
-          ).catch(() => {});
-          const password = decrypt(row.encrypted_password);
-          const appAgent = await createAgent(row.handle, password);
-          await runSubscription(appAgent, appAgent.session?.did);
-        } else if (isScopeError(errMsg) && row.did) {
-          // Pure OAuth user — no fallback, just flag for re-auth
-          console.error(`[sync] ✗ subscription ${row.sub_id} failed: ${errMsg}`);
-          await query(
-            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
-            [row.did]
-          ).catch(() => {});
-        } else if (isTargetUnavailableError(errMsg)) {
-          // Target account is permanently gone — pause the subscription
-          const reason = `Target account unavailable: ${errMsg.slice(0, 120)}`;
-          console.warn(`[sync] ⏸ subscription ${row.sub_id} paused — ${reason}`);
-          await query(
-            'UPDATE subscriptions SET paused_reason = $1 WHERE id = $2',
-            [reason, row.sub_id]
-          ).catch(() => {});
-        } else {
-          throw workErr;
+      if (excludeListUri && isValidAtUri(excludeListUri) && dids.length > 0) {
+        const excludeDids = await getListMembersCached(excludeListUri, workAgent);
+        if (excludeDids.length > 0) {
+          const excludeSet = new Set(excludeDids);
+          const before = dids.length;
+          dids = dids.filter((d) => !excludeSet.has(d));
+          const excluded = before - dids.length;
+          if (excluded > 0) log.debug('exclude-list', { subId: row.sub_id, excluded });
         }
       }
+
+      if (dids.length > 0) {
+        const action = row.mode as 'block' | 'mute';
+        const source: 'subscription' | 'reblock' | 'interaction' =
+          row.sub_type === 'reblock' ? 'reblock' :
+          row.sub_type === 'postinteraction' ? 'interaction' : 'subscription';
+
+        const whitelisted = await getWhitelistedDids(row.user_id, dids);
+        const nonWhitelisted = dids.filter((d) => !whitelisted.has(d));
+        const alreadyActioned = await getAlreadyActionedDids(row.user_id, nonWhitelisted, action);
+        let newDids = nonWhitelisted.filter((d) => !alreadyActioned.has(d));
+
+        if ((protectMutuals || protectFollowings) && newDids.length > 0) {
+          const protectedMutuals = protectMutuals ? new Set(await checkMutuals(workAgent, newDids)) : new Set<string>();
+          const protectedFollowings = protectFollowings ? new Set(await checkFollowings(workAgent, newDids)) : new Set<string>();
+          const beforeProtect = newDids.length;
+          newDids = newDids.filter((d) => !protectedMutuals.has(d) && !protectedFollowings.has(d));
+          const protectedCount = beforeProtect - newDids.length;
+          if (protectedCount > 0) log.debug('protected-accounts', { subId: row.sub_id, protectedCount });
+        }
+
+        if (newDids.length > 0) {
+          const { succeededDids } = action === 'block'
+            ? await blockAccounts(workAgent, newDids, 10, undefined, workAgentDid)
+            : await muteAccounts(workAgent, newDids);
+          await logBlockEvents(row.user_id, succeededDids, action, source);
+
+          if (addToListUri && succeededDids.length > 0) {
+            try {
+              await addToList(workAgent, addToListUri, succeededDids, workAgentDid);
+            } catch (err) {
+              log.warn('add-to-list-failed', { subId: row.sub_id, error: sanitizeError(err) });
+            }
+          }
+        }
+
+        const skipped = alreadyActioned.size;
+        const wlSkipped = whitelisted.size;
+        const completeMeta: Record<string, unknown> = {
+          subId: row.sub_id, handle: row.handle, target: row.target_handle,
+          mode: row.mode, subType: row.sub_type,
+          newDids: newDids.length, skipped, whitelisted: wlSkipped,
+          ...(listUri ? { listUri } : {}),
+          ...(row.include_followers ? { followersOnly, ...(excludeListUri ? { excludeList: true } : {}) } : {}),
+          ...(protectMutuals ? { protectMutuals } : {}),
+          ...(protectFollowings ? { protectFollowings } : {}),
+          ...(addToListUri ? { addToList: true } : {}),
+        };
+        log.info('sub-complete', completeMeta);
+      } else {
+        log.info('sub-complete', {
+          subId: row.sub_id, handle: row.handle, target: row.target_handle,
+          mode: row.mode, subType: row.sub_type, newDids: 0,
+          ...(listUri ? { listUri } : {}),
+          ...(row.include_followers ? { followersOnly, ...(excludeListUri ? { excludeList: true } : {}) } : {}),
+        });
+      }
+
+      await query('UPDATE subscriptions SET last_updated = NOW(), sync_failure_count = 0 WHERE id = $1', [row.sub_id]);
+    };
+
+    try {
+      await runSubscription(agent, agentDid);
+    } catch (workErr) {
+      const errMsg = workErr instanceof Error ? workErr.message : String(workErr);
+      if (isScopeError(errMsg) && oauthAttempted && row.encrypted_password) {
+        log.warn('scope-error-fallback', { handle: row.handle, subId: row.sub_id });
+        await query(
+          'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+          [row.did]
+        ).catch(() => {});
+        const password = decrypt(row.encrypted_password);
+        const appAgent = await createAgent(row.handle, password);
+        await runSubscription(appAgent, appAgent.session?.did);
+      } else if (isScopeError(errMsg) && row.did) {
+        log.error('scope-error-no-fallback', { subId: row.sub_id, error: errMsg });
+        await query(
+          'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+          [row.did]
+        ).catch(() => {});
+      } else if (isTargetUnavailableError(errMsg)) {
+        const reason = `Target account unavailable: ${errMsg.slice(0, 120)}`;
+        log.warn('target-unavailable', { subId: row.sub_id, reason });
+        await query(
+          'UPDATE subscriptions SET paused_reason = $1 WHERE id = $2',
+          [reason, row.sub_id]
+        ).catch(() => {});
+      } else {
+        throw workErr;
+      }
+    }
+  }
+
+  // Maximum wall-clock time allowed for a single subscription (agent creation + all API calls).
+  // If exceeded, the subscription counts as a failure for auto-pause purposes.
+  const SUB_TIMEOUT_MS = 5 * 60 * 1000;
+
+  for (const row of rows) {
+    try {
+      await Promise.race([
+        processRow(row),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Subscription timed out after ${SUB_TIMEOUT_MS / 1000}s`)),
+            SUB_TIMEOUT_MS
+          )
+        ),
+      ]);
     } catch (err) {
-      console.error(`[sync] ✗ subscription ${row.sub_id} failed:`, sanitizeError(err));
+      log.error('sub-failed', { subId: row.sub_id, error: sanitizeError(err) });
+      // Increment the consecutive-failure counter; auto-pause after threshold to stop
+      // flooding logs and burning API quota on permanently broken subscriptions.
+      const PAUSE_THRESHOLD = 5;
+      try {
+        const updated = await query<{ sync_failure_count: number; handle: string; target_handle: string }>(
+          `UPDATE subscriptions
+           SET sync_failure_count = sync_failure_count + 1
+           WHERE id = $1
+           RETURNING sync_failure_count`,
+          [row.sub_id]
+        );
+        const failures = updated[0]?.sync_failure_count ?? 0;
+        if (failures >= PAUSE_THRESHOLD) {
+          const reason = `Auto-paused after ${failures} consecutive sync failures. Last error: ${sanitizeError(err).slice(0, 120)}`;
+          log.warn('auto-paused', { subId: row.sub_id, failures, error: sanitizeError(err) });
+          await query(
+            'UPDATE subscriptions SET paused_reason = $1 WHERE id = $2 AND paused_reason IS NULL',
+            [reason, row.sub_id]
+          );
+        }
+      } catch {
+        // best-effort — failure counter update is non-fatal
+      }
     }
 
     // Small inter-subscription pause to avoid burst rate-limit when a user has many subscriptions
@@ -346,13 +408,13 @@ export function startSyncWorker(): void {
 
   syncState.intervalMinutes = intervalMinutes;
 
-  console.log(`[sync] Worker started — interval: ${intervalMinutes} min`);
+  log.info('worker-start', { intervalMinutes });
 
   let syncRunning = false;
 
   async function runSync(label: string): Promise<void> {
     if (syncRunning) {
-      console.warn(`[sync] ${label} skipped — previous run still in progress`);
+      log.warn('run-skipped', { label });
       return;
     }
     syncRunning = true;
@@ -360,7 +422,7 @@ export function startSyncWorker(): void {
       await syncAllSubscriptions();
       syncState.lastRunAt = new Date();
     } catch (err) {
-      console.error(`[sync] ${label} failed:`, sanitizeError(err));
+      log.error('run-failed', { label, error: sanitizeError(err) });
     } finally {
       syncRunning = false;
       syncState.nextRunAt = new Date(Date.now() + intervalMs);

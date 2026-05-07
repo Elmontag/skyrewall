@@ -180,4 +180,9 @@ export async function initDb(): Promise<void> {
   await query(`
     ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS paused_reason TEXT
   `).catch(() => {});
+
+  // Counter for consecutive sync failures — subscription is auto-paused after SYNC_FAILURE_PAUSE_THRESHOLD failures
+  await query(`
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sync_failure_count INT NOT NULL DEFAULT 0
+  `).catch(() => {});
 }

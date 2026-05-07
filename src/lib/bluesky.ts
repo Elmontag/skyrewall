@@ -9,8 +9,23 @@ import { assertPublicPdsHostname, didWebToDocumentUrl, validatePdsServiceEndpoin
 
 const CLEARSKY_BASE = 'https://public.api.clearsky.services';
 
+const TRANSIENT_NETWORK_CODES = new Set([
+  'UND_ERR_SOCKET', 'ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED',
+  'ETIMEDOUT', 'ENOTFOUND', 'EPIPE', 'EHOSTUNREACH',
+]);
+
+/** Returns true for transient network errors that are safe to retry. */
+function isTransientNetworkError(err: unknown): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const checkCode = (x: unknown) => !!x && TRANSIENT_NETWORK_CODES.has((x as any)?.code);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const e = err as any;
+  return checkCode(e) || checkCode(e?.cause) || checkCode(e?.cause?.cause);
+}
+
 /**
- * Retries an async operation on HTTP 429/503 with exponential backoff.
+ * Retries an async operation on HTTP 429/503 or transient network errors
+ * (socket reset, ECONNRESET, etc.) with exponential backoff.
  * Respects Retry-After header (capped at 60s). Up to maxAttempts total tries.
  */
 export async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
@@ -22,14 +37,16 @@ export async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promi
       lastErr = err;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const status = (err as any)?.status ?? (err as any)?.response?.status;
-      if (status !== 429 && status !== 503) throw err;
+      const isRateLimit = status === 429 || status === 503;
+      if (!isRateLimit && !isTransientNetworkError(err)) throw err;
       /* eslint-disable @typescript-eslint/no-explicit-any */
-      const retryAfterRaw =
+      const retryAfterRaw = isRateLimit ? (
         (err as any)?.response?.headers?.get?.('retry-after') ??
         (err as any)?.response?.headers?.get?.('Retry-After') ??
         (err as any)?.headers?.get?.('retry-after') ??
         (err as any)?.headers?.get?.('Retry-After') ??
-        (err as any)?.headers?.['retry-after'];
+        (err as any)?.headers?.['retry-after']
+      ) : null;
       /* eslint-enable @typescript-eslint/no-explicit-any */
       let waitMs: number;
       if (retryAfterRaw) {
@@ -98,7 +115,7 @@ export async function resolvePdsUrl(handleOrDid: string): Promise<string> {
 export async function createAgent(handle: string, password: string): Promise<BskyAgent> {
   const service = await resolvePdsUrl(handle);
   const agent = new BskyAgent({ service });
-  await agent.login({ identifier: handle, password });
+  await withRetry(() => agent.login({ identifier: handle, password }));
   return agent;
 }
 
@@ -448,7 +465,7 @@ export async function addToList(
   dids: string[],
   repoDid?: string
 ): Promise<{ succeeded: number; failed: number }> {
-  const repo = repoDid ?? agent.session?.did;
+  const repo = repoDid ?? agent.session?.did ?? (agent as unknown as { did?: string }).did;
   if (!repo) throw new Error('No active session DID for addToList');
 
   let succeeded = 0;
@@ -597,7 +614,7 @@ export async function fetchUserLists(
   agent: BskyAgent,
   actor?: string
 ): Promise<BlueskyList[]> {
-  const actorId = actor ?? agent.session?.did;
+  const actorId = actor ?? agent.session?.did ?? (agent as unknown as { did?: string }).did;
   if (!actorId) throw new Error('No actor DID available');
 
   const lists: BlueskyList[] = [];

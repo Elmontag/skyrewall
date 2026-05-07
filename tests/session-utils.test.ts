@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
-import { isValidDid, isScopeError } from '../src/lib/session-utils';
+import { isValidDid, isScopeError, isTargetUnavailableError } from '../src/lib/session-utils';
 
 describe('isValidDid', () => {
   it('accepts standard did:plc identifiers', () => {
@@ -54,6 +54,37 @@ describe('isScopeError', () => {
     assert.equal(isScopeError('Unauthorized'), false);
     assert.equal(isScopeError('Network request failed'), false);
     assert.equal(isScopeError(''), false);
+  });
+});
+
+describe('isTargetUnavailableError', () => {
+  const positives = [
+    'AccountDeactivated',
+    'AccountTakendown',
+    'AccountSuspended',
+    'ActorNotFound',
+    'Profile not found',
+    'Could not find user',
+    'Actor not found',
+    'Account has been deactivated',
+    'Account has been suspended',
+  ];
+
+  for (const msg of positives) {
+    it(`detects: ${msg}`, () => {
+      assert.ok(isTargetUnavailableError(msg), `expected isTargetUnavailableError("${msg}") to be true`);
+    });
+  }
+
+  it('returns false for unrelated errors', () => {
+    assert.equal(isTargetUnavailableError('Network request failed'), false);
+    assert.equal(isTargetUnavailableError('Missing required scope'), false);
+    assert.equal(isTargetUnavailableError(''), false);
+  });
+
+  it('is case-insensitive for lowercase variants', () => {
+    assert.ok(isTargetUnavailableError('profile not found'));
+    assert.ok(isTargetUnavailableError('ACCOUNT HAS BEEN DEACTIVATED'));
   });
 });
 

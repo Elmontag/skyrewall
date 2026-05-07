@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { fetchAllFollowers, createAgent } from '@/lib/bluesky';
-import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api:followers');
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,12 +53,15 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          log.info('fetch-start', { mode: sessionAgent ? 'stateful' : 'stateless', targetHandle });
           const followers = await fetchAllFollowers(agent, targetHandle, (count) => {
             controller.enqueue(encode({ count }));
           });
+          log.info('fetch-complete', { targetHandle, count: followers.length });
           controller.enqueue(encode({ followers, targetDid, complete: true }));
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
+          log.error('fetch-failed', { targetHandle, error: sanitizeError(err) });
           controller.enqueue(encode({ error: message }));
         } finally {
           controller.close();
@@ -75,6 +81,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
+    log.error('request-failed', { error: sanitizeError(err) });
     return NextResponse.json({ error: 'Failed to fetch followers' }, { status: 500 });
   }
 }

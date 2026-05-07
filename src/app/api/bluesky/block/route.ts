@@ -3,8 +3,10 @@ import { getSessionUserId, isValidDid } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { blockAccounts, createAgent } from '@/lib/bluesky';
 import { logBlockEvents } from '@/lib/block-events';
-import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
 
+const log = createLogger('api:block');
 const MAX_DIDS = 5000;
 
 export async function POST(req: NextRequest) {
@@ -52,6 +54,15 @@ export async function POST(req: NextRequest) {
 
     const { succeeded, failed, succeededDids } = await blockAccounts(agent, dids);
 
+    log.info('block', {
+      mode: sessionAgent ? 'stateful' : 'stateless',
+      handle: sessionAgent ? sessionAgent.handle : String(body.handle ?? ''),
+      count: dids.length,
+      succeeded,
+      failed,
+      source: resolvedSource,
+    });
+
     let warning: string | undefined;
     try {
       await logBlockEvents(userId, succeededDids, 'block', resolvedSource);
@@ -65,6 +76,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
+    log.error('block failed', { error: sanitizeError(err) });
     return NextResponse.json({ error: 'Failed to block accounts' }, { status: 500 });
   }
 }

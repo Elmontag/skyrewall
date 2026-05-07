@@ -7,6 +7,9 @@ import { isValidDid } from '@/lib/session';
 import { createAgent } from '@/lib/bluesky';
 import { sanitizeError } from '@/lib/request-security';
 import { didWebToDocumentUrl } from '@/lib/pds';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('auth:oauth-callback');
 
 interface UserRow {
   id: string;
@@ -36,7 +39,7 @@ export async function GET(req: NextRequest) {
     const expectedDid = req.cookies.get('oauth_reauth_did')?.value ?? null;
     if (expectedDid !== null && did !== expectedDid) {
       await deleteOAuthSession(did);
-      console.warn('[oauth/callback] reauth DID mismatch — rejecting');
+      log.warn('reauth-did-mismatch', { expectedDid: '[redacted]', gotDid: '[redacted]' });
       const errorUrl = `${appUrl}/?tab=account&oauth_error=wrong_account`;
       const mismatchRes = NextResponse.redirect(errorUrl);
       mismatchRes.cookies.delete('oauth_reauth_did');
@@ -165,6 +168,7 @@ export async function GET(req: NextRequest) {
       [user.id]
     ).catch(() => {});
 
+    log.info('login-success', { userId: user.id, handle: user.handle, isNewUser: rows.length === 0 });
     const sessionData = signSession(
       JSON.stringify({ userId: user.id, iat: Math.floor(Date.now() / 1000) })
     );
@@ -189,9 +193,8 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const sanitized = sanitizeError(err);
     const stack = err instanceof Error ? err.stack : undefined;
-    console.error('[oauth/callback] error:', sanitized, stack ? `\n${stack}` : '');
-    console.error('[oauth/callback] appUrl:', appUrl || '(empty — NEXT_PUBLIC_APP_URL not set)');
-    console.error('[oauth/callback] params:', Object.fromEntries(params.entries()));
+    log.error('callback-error', { error: sanitized, params: Object.fromEntries(params.entries()) });
+    if (stack) log.debug('callback-error-stack', { stack });
     const errorUrl = `${appUrl}/?tab=account&oauth_error=1`;
     return NextResponse.redirect(errorUrl);
   }

@@ -4,7 +4,10 @@ import { getSessionAgent } from '@/lib/session-agent';
 import { addToList, createAgent, muteAccounts } from '@/lib/bluesky';
 import type { BskyAgent } from '@atproto/api';
 import { logBlockEvents } from '@/lib/block-events';
-import { checkApiRateLimit, rejectCrossOrigin } from '@/lib/request-security';
+import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api:mute-stream');
 
 const MAX_DIDS = 5000;
 
@@ -91,7 +94,15 @@ export async function POST(req: NextRequest) {
         }
 
         controller.enqueue(encode({ done: total, total, succeeded, failed, warning, addedToList, listAddFailed, complete: true }));
+        log.info('mute-stream complete', {
+          mode: sessionAgent ? 'stateful' : 'stateless',
+          total,
+          succeeded,
+          failed,
+          source: resolvedSource,
+        });
       } catch (err) {
+        log.error('mute-stream failed', { mode: sessionAgent ? 'stateful' : 'stateless', error: sanitizeError(err) });
         controller.enqueue(encode({ error: err instanceof Error ? err.message : 'Unknown error' }));
       } finally {
         controller.close();

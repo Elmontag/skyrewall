@@ -4,7 +4,9 @@ import { getSessionUserId } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { fetchPostInteractors, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
 
+const log = createLogger('api:post-interactions');
 const MAX_RESULTS = 5000;
 
 /** Convert a bsky.app post URL to an AT-URI */
@@ -77,12 +79,15 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          log.info('fetch-start', { mode: sessionAgent ? 'stateful' : 'stateless', atUri, types: resolvedTypes });
           const interactors = await fetchPostInteractors(agent, atUri, resolvedTypes, MAX_RESULTS, (count) => {
             controller.enqueue(encode({ count }));
           });
+          log.info('fetch-complete', { atUri, count: interactors.length });
           controller.enqueue(encode({ interactors, complete: true }));
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
+          log.error('fetch-failed', { atUri, error: sanitizeError(err) });
           controller.enqueue(encode({ error: message }));
         } finally {
           controller.close();
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
     if (message.includes('Invalid post URL')) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error('[post-interactions]', sanitizeError(err));
+    log.error('request-failed', { error: sanitizeError(err) });
     return NextResponse.json({ error: 'Failed to fetch post interactions' }, { status: 500 });
   }
 }

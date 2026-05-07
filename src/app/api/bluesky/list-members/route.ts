@@ -3,6 +3,9 @@ import { getSessionUserId } from '@/lib/session';
 import { getSessionAgent } from '@/lib/session-agent';
 import { fetchListMembers, createAgent } from '@/lib/bluesky';
 import { checkApiRateLimit, rejectCrossOrigin, isValidAtUri, sanitizeError } from '@/lib/request-security';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('api:list-members');
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,12 +53,15 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          log.info('fetch-start', { mode: sessionAgent ? 'stateful' : 'stateless', list_uri });
           const members = await fetchListMembers(agent, list_uri, 5000, (count) => {
             controller.enqueue(encode({ count }));
           });
+          log.info('fetch-complete', { list_uri, count: members.length });
           controller.enqueue(encode({ members, complete: true }));
         } catch (err) {
           const message = err instanceof Error ? sanitizeError(err) : 'Unknown error';
+          log.error('fetch-failed', { list_uri, error: message });
           controller.enqueue(encode({ error: message }));
         } finally {
           controller.close();
@@ -72,7 +78,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[api/bluesky/list-members]', sanitizeError(err));
+    log.error('request-failed', { error: sanitizeError(err) });
     if (message.includes('Authentication') || message.includes('Invalid')) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }

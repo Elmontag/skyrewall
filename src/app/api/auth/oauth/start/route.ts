@@ -4,6 +4,9 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { getClientIp, rejectCrossOrigin, sanitizeError } from '@/lib/request-security';
 import { getSessionUserId } from '@/lib/session';
 import { query } from '@/lib/db';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('auth:oauth-start');
 
 interface UserRow { handle: string; did: string | null; }
 
@@ -67,6 +70,7 @@ export async function POST(req: NextRequest) {
       path: '/',
     };
     const response = NextResponse.json({ redirectUrl: url.toString() });
+    log.info('oauth-start', { handle: reauthHandle ?? '(none)', isReauth });
 
     if (privacyAccepted && !isReauth) {
       // Only set consent cookie for new registrations, not re-auth flows.
@@ -79,7 +83,7 @@ export async function POST(req: NextRequest) {
     }
     return response;
   } catch (err) {
-    console.error('[oauth/start] error:', sanitizeError(err));
+    log.error('start-error', { error: sanitizeError(err) });
     return NextResponse.json({ error: 'Failed to initiate OAuth flow.' }, { status: 500 });
   }
 }
