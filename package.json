@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts",
+    "admin": "tsx scripts/admin-cli.ts"
   },
   "dependencies": {
     "@atproto/api": "^0.13.0",
