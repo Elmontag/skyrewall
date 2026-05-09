@@ -205,6 +205,7 @@ export default function SubscriptionManager({ t, onNeedLogin }: Props) {
                 <div className="min-w-0">
                   <span className="font-semibold">{t.subscriptionPausedTitle}. </span>
                   <span>{t.subscriptionPausedHint}</span>
+                  <p className="mt-1 opacity-60 break-all">{sub.paused_reason}</p>
                 </div>
               </div>
             )}

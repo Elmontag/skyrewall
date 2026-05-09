@@ -87,6 +87,12 @@ async function syncAllSubscriptions(): Promise<void> {
   // The persistent list_cache table (with TTL) handles cross-run deduplication.
   const inRunListCache = new Map<string, string[]>();
 
+  // In-run agent cache: one authenticated agent per user per sync run.
+  // Without this, every subscription would call createAgent() (= agent.login()) separately,
+  // causing Bluesky to rate-limit accounts with many subscriptions.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const agentCache = new Map<string, { agent: any; agentDid: string | undefined; oauthAttempted: boolean }>();
+
   const intervalMinutes = Math.max(1, parseInt(process.env.SYNC_INTERVAL_MINUTES ?? '60', 10));
 
   /**
@@ -136,57 +142,66 @@ async function syncAllSubscriptions(): Promise<void> {
   }
 
   async function processRow(row: SyncRow): Promise<void> {
-    // Resolve the agent: prefer OAuth when a DID is linked (covers both pure-OAuth
-    // users and app-password accounts that were later linked via OAuth). Fall back to
-    // app-password if OAuth is unavailable.
+    // Resolve the agent: check in-run cache first to avoid repeated logins for users
+    // with multiple subscriptions (which would trigger Bluesky's login rate-limit).
+    // On cache miss: prefer OAuth when a DID is linked, fall back to app-password.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let agent: any;
     let agentDid: string | undefined;
     let oauthAttempted = false;
 
-    if (row.did) {
-      oauthAttempted = true;
-      try {
-        agent = await createAgentForOAuth(row.did);
-        agentDid = row.did;
-        await query(
-          'UPDATE users SET oauth_error_since = NULL WHERE did = $1 AND oauth_error_since IS NOT NULL',
-          [row.did]
-        ).catch(() => {});
-      } catch (oauthErr) {
-        oauthAttempted = false;
-        if (row.encrypted_password) {
-          log.warn('oauth-fallback', { handle: row.handle, error: sanitizeError(oauthErr) });
-          const password = decrypt(row.encrypted_password);
-          agent = await createAgent(row.handle, password);
-          agentDid = agent.session?.did;
-        } else {
-          log.error('oauth-failed', { handle: row.handle, did: row.did, error: sanitizeError(oauthErr) });
+    const cached = agentCache.get(row.user_id);
+    if (cached) {
+      agent = cached.agent;
+      agentDid = cached.agentDid;
+      oauthAttempted = cached.oauthAttempted;
+      log.debug('agent-cached', { subId: row.sub_id, handle: row.handle, authMethod: oauthAttempted ? 'oauth' : 'app-password' });
+    } else {
+      if (row.did) {
+        oauthAttempted = true;
+        try {
+          agent = await createAgentForOAuth(row.did);
+          agentDid = row.did;
           await query(
-            'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+            'UPDATE users SET oauth_error_since = NULL WHERE did = $1 AND oauth_error_since IS NOT NULL',
             [row.did]
           ).catch(() => {});
+        } catch (oauthErr) {
+          oauthAttempted = false;
+          if (row.encrypted_password) {
+            log.warn('oauth-fallback', { handle: row.handle, error: sanitizeError(oauthErr) });
+            const password = decrypt(row.encrypted_password);
+            agent = await createAgent(row.handle, password);
+            agentDid = agent.session?.did;
+          } else {
+            log.error('oauth-failed', { handle: row.handle, did: row.did, error: sanitizeError(oauthErr) });
+            await query(
+              'UPDATE users SET oauth_error_since = NOW() WHERE did = $1 AND oauth_error_since IS NULL',
+              [row.did]
+            ).catch(() => {});
+            return;
+          }
+        }
+      } else if (row.encrypted_password) {
+        const password = decrypt(row.encrypted_password);
+        agent = await createAgent(row.handle, password);
+        agentDid = agent.session?.did;
+        if (!agentDid) {
+          log.warn('no-agent-did', { subId: row.sub_id });
           return;
         }
-      }
-    } else if (row.encrypted_password) {
-      const password = decrypt(row.encrypted_password);
-      agent = await createAgent(row.handle, password);
-      agentDid = agent.session?.did;
-      if (!agentDid) {
-        log.warn('no-agent-did', { subId: row.sub_id });
+      } else {
+        log.warn('no-credentials', { subId: row.sub_id });
         return;
       }
-    } else {
-      log.warn('no-credentials', { subId: row.sub_id });
-      return;
-    }
 
-    // Best-effort: extract the PDS hostname for observability (bsky.social vs custom PDS).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pds: string = (() => { try { const a = agent as any; return a?.service?.hostname ?? a?.serviceUrl?.hostname ?? 'unknown'; } catch { return 'unknown'; } })();
-    const authMethod = oauthAttempted ? 'oauth' : 'app-password';
-    log.info('agent-resolved', { subId: row.sub_id, handle: row.handle, pds, authMethod });
+      agentCache.set(row.user_id, { agent, agentDid, oauthAttempted });
+      // Best-effort: extract the PDS hostname for observability (bsky.social vs custom PDS).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pds: string = (() => { try { const a = agent as any; return a?.service?.hostname ?? a?.serviceUrl?.hostname ?? 'unknown'; } catch { return 'unknown'; } })();
+      const authMethod = oauthAttempted ? 'oauth' : 'app-password';
+      log.info('agent-resolved', { subId: row.sub_id, handle: row.handle, pds, authMethod });
+    }
 
     // Core processing logic, extracted so it can be retried with a different agent.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -335,6 +350,8 @@ async function syncAllSubscriptions(): Promise<void> {
         ).catch(() => {});
         const password = decrypt(row.encrypted_password);
         const appAgent = await createAgent(row.handle, password);
+        // Update cache: subsequent subscriptions for this user should use app-password
+        agentCache.set(row.user_id, { agent: appAgent, agentDid: appAgent.session?.did, oauthAttempted: false });
         await runSubscription(appAgent, appAgent.session?.did);
       } else if (isScopeError(errMsg) && row.did) {
         log.error('scope-error-no-fallback', { subId: row.sub_id, error: errMsg });
